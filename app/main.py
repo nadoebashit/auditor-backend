@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Ensure the project root is on the import path when running as ``python app/main.py``.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -25,6 +26,17 @@ app = FastAPI(
     title="OSON Document Intelligence",
     description="Авторизация для административной панели и Telegram Mini App",
     swagger_ui_parameters={"persistAuthorization": True},
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 from app.modules.chats.router import router as chats_router

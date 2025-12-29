@@ -34,3 +34,7 @@ class UserRepository:
         self.db.commit()
         self.db.refresh(user)
         return user
+
+    def get_all(self) -> list[User]:
+        stmt = select(User)
+        return list(self.db.scalars(stmt))

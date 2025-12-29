@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Optional
+from datetime import date
 
 from uuid import UUID
 
@@ -25,6 +26,10 @@ class FileUploadResponse(BaseModel):
     bucket: str
     object_key: str
     original_filename: str
+    title: Optional[str] = None
+    version_date: Optional[date] = None
+    language: Optional[str] = None
+    description: Optional[str] = None
     is_indexed: bool
     index_status: Optional[FileIndexStatus] = None
     index_error: Optional[str] = None
@@ -47,6 +52,10 @@ class FileStatusResponse(BaseModel):
     scope: FileScope
     customer_id: Optional[str] = None
     original_filename: str
+    title: Optional[str] = None
+    version_date: Optional[date] = None
+    language: Optional[str] = None
+    description: Optional[str] = None
     is_indexed: bool
     index_status: Optional[FileIndexStatus] = None
     index_error: Optional[str] = None
@@ -63,6 +72,10 @@ class FileStatusResponse(BaseModel):
                 "scope": obj.scope,
                 "customer_id": obj.customer_id,
                 "original_filename": obj.original_filename,
+                "title": getattr(obj, "title", None),
+                "version_date": getattr(obj, "version_date", None),
+                "language": getattr(obj, "language", None),
+                "description": getattr(obj, "description", None),
                 "is_indexed": obj.is_indexed,
                 "index_status": obj.index_status,
                 "index_error": obj.index_error,

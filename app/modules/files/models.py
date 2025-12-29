@@ -1,9 +1,10 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -52,6 +53,10 @@ class StoredFile(Base):
     original_filename: Mapped[str] = mapped_column(String, nullable=False)
     content_type: Mapped[str | None] = mapped_column(String, nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    version_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    language: Mapped[str | None] = mapped_column(String, nullable=True)
 
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import io
 import uuid
+from datetime import date
 from typing import List
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -77,7 +79,16 @@ class FileService:
         self.db = db
         self.storage = storage
 
-    def upload_admin_file(self, user, file) -> StoredFile:
+    def upload_admin_file(
+        self,
+        user,
+        file,
+        *,
+        title: str | None = None,
+        version_date: date | None = None,
+        language: str | None = None,
+        description: str | None = None,
+    ) -> StoredFile:
         """
         Upload an admin (law/standard) file and create a StoredFile record.
         Indexing is handled asynchronously by a worker (Arq) after the upload.
@@ -109,6 +120,10 @@ class FileService:
             original_filename=file.filename,
             content_type=file.content_type,
             size_bytes=len(content),
+            title=title,
+            version_date=version_date,
+            language=language,
+            description=description,
             is_indexed=False,
             index_error=None,
             index_status=FileIndexStatus.QUEUED,
@@ -191,7 +206,15 @@ class FileService:
             StoredFile.scope == FileScope.ADMIN_LAW
         )
         if search:
-            query = query.filter(StoredFile.original_filename.ilike(f"%{search}%"))
+            like = f"%{search}%"
+            query = query.filter(
+                or_(
+                    StoredFile.original_filename.ilike(like),
+                    StoredFile.title.ilike(like),
+                    StoredFile.description.ilike(like),
+                    StoredFile.language.ilike(like),
+                )
+            )
         return query.order_by(StoredFile.uploaded_at.desc()).all()
 
     def list_customer_files(

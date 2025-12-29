@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 
 from qdrant_client.models import PointStruct
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -270,6 +271,14 @@ class HybridFileService:
                 "customer_id": stored_file.customer_id,
                 "owner_id": str(stored_file.owner_id),
                 "filename": stored_file.original_filename,
+                "title": getattr(stored_file, "title", None),
+                "version_date": (
+                    stored_file.version_date.isoformat()
+                    if getattr(stored_file, "version_date", None)
+                    else None
+                ),
+                "language": getattr(stored_file, "language", None),
+                "description": getattr(stored_file, "description", None),
                 "source_type": stored_file.content_type,
             }
 
@@ -581,7 +590,15 @@ class HybridFileService:
             StoredFile.scope == FileScope.ADMIN_LAW
         )
         if search:
-            query = query.filter(StoredFile.original_filename.ilike(f"%{search}%"))
+            like = f"%{search}%"
+            query = query.filter(
+                or_(
+                    StoredFile.original_filename.ilike(like),
+                    StoredFile.title.ilike(like),
+                    StoredFile.description.ilike(like),
+                    StoredFile.language.ilike(like),
+                )
+            )
         return query.order_by(StoredFile.uploaded_at.desc()).all()
 
     def list_customer_files(

@@ -13,6 +13,7 @@ from app.modules.auth.schemas import (
     TokenResponse,
     UserBase,
     UserCreateRequest,
+    UserListResponse,
 )
 from app.modules.auth.service import AuthService
 
@@ -178,6 +179,20 @@ def create_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
+
+
+@router.get(
+    "/admin/users",
+    response_model=UserListResponse,
+    summary="Список всех пользователей (только для админов)",
+)
+def list_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    repo = UserRepository(db)
+    users = repo.get_all()
+    return {"items": users, "total": len(users)}
 
 
 @router.post(

@@ -19,13 +19,138 @@
     }
   },
   "doc-f8ab33a38a7e693e0789cdf3cb46b768": {
-    "status": "pending",
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
     "content_summary": "OM={om_pct*100}% от {benchmark}, PM={PM_FACTORS[risk_level]*100}% от OM ({risk_level} risk)'\n}\nC2. Формула расчёта выборки (ISA 530)\n# functions/sampling.py\ndef calculate_sample_size(\npopulation_size: int,\npopulation_value: float,\npm: float,\nrisk_lev...",
     "content_length": 7508,
     "created_at": "2025-12-26T22:39:25.554188+00:00",
-    "updated_at": "2025-12-26T22:39:25.554188+00:00",
+    "updated_at": "2025-12-29T17:48:08.142686+00:00",
     "file_path": "OSON_TZ_FULL.docx",
     "track_id": "insert_20251227_033925_0fe4db4c",
+    "metadata": {
+      "processing_start_time": 1767030487,
+      "processing_end_time": 1767030488
+    },
+    "chunks_list": []
+  },
+  "doc-613e166c58849d2d07ea2a4307adc7e3": {
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
+    "content_summary": "Договор № ________\nоб оказании медицинских услуг\nг. Астана\t                                                     \t\t    «____» _______________ 2025 г.\nТОО «MEDICINALI», именуемое в дальнейшем «Заказчик», в лице Директора Оразбаева Бахыткуль Сериковна, ...",
+    "content_length": 7508,
+    "created_at": "2025-12-29T17:46:41.538199+00:00",
+    "updated_at": "2025-12-29T17:48:08.172688+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251229_224641_6ef808a2",
+    "metadata": {
+      "processing_start_time": 1767030487,
+      "processing_end_time": 1767030488
+    },
+    "chunks_list": []
+  },
+  "doc-ac4b7629d632e55f01a6201c20816ebb": {
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
+    "content_summary": "aspi Bank\"\nКБe: 17\nТел.: 87011725780\ne-mail: medicinali.ast@mail.ru\n\nДиректор\n________________ Оразбаева Б.С. | ИСПОЛНИТЕЛЬ:\nТОО «Геном плюс»\nБИН: 141240009289\nБанк: АО \"KASPI BANK\"\nБИК: CASPKZKA\nРасчетный счет: KZ25722S000008078910\nЮридический адрес...",
+    "content_length": 386,
+    "created_at": "2025-12-29T17:46:43.123120+00:00",
+    "updated_at": "2025-12-29T17:48:08.818993+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251229_224643_82f976f8",
+    "metadata": {
+      "processing_start_time": 1767030488,
+      "processing_end_time": 1767030488
+    },
+    "chunks_list": []
+  },
+  "doc-896d462d2442a0f56b93ea73625487d5": {
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
+    "content_summary": "Договор № ________\nоб оказании медицинских услуг\nг. Астана\t                                                     \t\t\t\t\t\t                  «____» _______________ 2025 г.\nТОО «МЕДЦЕНТР DOCTORS», именуемое в дальнейшем «Заказчик», в лице Директора Утебаев...",
+    "content_length": 7508,
+    "created_at": "2025-12-29T17:47:53.298049+00:00",
+    "updated_at": "2025-12-29T17:48:09.059144+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251229_224753_ef3b65a0",
+    "metadata": {
+      "processing_start_time": 1767030488,
+      "processing_end_time": 1767030489
+    },
+    "chunks_list": []
+  },
+  "doc-059f9f2c7315c665b00de8cf0f3e5d2b": {
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
+    "content_summary": "я | Гематологические исследования\nB02.114.002 | Общий анализ крови на анализаторе | кровь с ЭДТА | кол. | 1 раб. | 1200 | 840\nB02.061.002 | Измерение скорости оседания эритроцитов (СОЭ) | кровь с ЭДТА | кол. | 1 раб. | 960 | 672\nОбщеклинические иссле...",
+    "content_length": 7508,
+    "created_at": "2025-12-29T17:47:55.836248+00:00",
+    "updated_at": "2025-12-29T17:48:09.506498+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251229_224755_c7c53e93",
+    "metadata": {
+      "processing_start_time": 1767030488,
+      "processing_end_time": 1767030489
+    },
+    "chunks_list": []
+  },
+  "doc-985f84ccaf4aad046fc98a6deb7cf54f": {
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
+    "content_summary": "А) | сыв. | кол. | 3-5 раб. | 2640 | 1848\nB06.408.012 | Ig M (иммуноглобулин М) | сыв. | кол. | 3-5 раб. | 2640 | 1848\nB06.407.012 | Ig G (иммуноглобулин G) | сыв. | кол. | 3-5 раб. | 2640 | 1848\nB06.406.005 | Ig E (иммуноглобулин Е) | сыв. | кол. | ...",
+    "content_length": 7507,
+    "created_at": "2025-12-29T17:47:57.796459+00:00",
+    "updated_at": "2025-12-29T17:48:09.863464+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251229_224757_631b1b02",
+    "metadata": {
+      "processing_start_time": 1767030489,
+      "processing_end_time": 1767030489
+    },
+    "chunks_list": []
+  },
+  "doc-76a1033c5fff8b073be4949a80715ee1": {
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
+    "content_summary": "е инфекции) | Иммунологические маркеры инфекций (паразитарные инфекции)\nB06.556.005 | Определение суммарных антител к Helicobacter pylori  (HP) | сыв. | кач. | 3-5 раб. | 3600 | 2520\nB06.268.005 | Описторхоз Ig M | сыв. | кач. | 3-5 раб. | 1800 | 126...",
+    "content_length": 7507,
+    "created_at": "2025-12-29T17:48:00.547951+00:00",
+    "updated_at": "2025-12-29T17:48:11.348079+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251229_224800_a5fc2dae",
+    "metadata": {
+      "processing_start_time": 1767030489,
+      "processing_end_time": 1767030491
+    },
+    "chunks_list": []
+  },
+  "doc-77ca3e2dbe4b1ba1e963fd9fd2f12b97": {
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
+    "content_summary": "раб. | 3000 | 2100\nB09.828.020 | Обнаружение вирус простого герпеса 1 и 2 типов в биологическом материале методом ПЦР количественное | соскоб, моча, кровь, слюна | кач. | 2-4 раб. | 6000 | 4200\nB09.847.020 | Обнаружение цитомегаловируса (ВПГ-V) в био...",
+    "content_length": 7508,
+    "created_at": "2025-12-29T17:48:04.355629+00:00",
+    "updated_at": "2025-12-29T17:48:11.396526+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251229_224804_c86b5fd8",
+    "metadata": {
+      "processing_start_time": 1767030489,
+      "processing_end_time": 1767030491
+    },
+    "chunks_list": []
+  },
+  "doc-bf352b5e6b804f7aac7a934bbb8593ca": {
+    "status": "failed",
+    "error_msg": "All embedding providers failed: 403 Client Error: Forbidden for url: https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=AIzaSyAY-UYuGIhpAqXYVdEZ5rIygvoUNW9py70",
+    "content_summary": "тител класса IgG к коронавирусу SARS-CoV-2 (COVID-19) в сыворотке крови методом иммуноферментного анализа | сыв. | 1-2 раб. | 4200 | 2940\nB06.864.005 | Определение суммарных антител класса IgМ к коронавирусу SARS-CoV-2 (COVID-19) в сыворотке крови ме...",
+    "content_length": 5383,
+    "created_at": "2025-12-29T17:48:07.384850+00:00",
+    "updated_at": "2025-12-29T17:48:12.336447+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251229_224807_0fab8f52",
+    "metadata": {
+      "processing_start_time": 1767030491,
+      "processing_end_time": 1767030492
+    },
     "chunks_list": []
   }
 }

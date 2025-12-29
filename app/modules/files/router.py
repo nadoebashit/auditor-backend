@@ -1,7 +1,8 @@
 import io
+from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -45,16 +46,27 @@ def _get_file_service(db: Session = Depends(get_db)) -> FileService:
     return FileService(db=db, storage=storage)
 
 
-@router.post("/admin", status_code=201)
+@router.post("/admin", response_model=FileUploadResponse, status_code=201)
 async def upload_admin_file(
     file: UploadFile = File(...),
+    title: str | None = Form(default=None),
+    version_date: date | None = Form(default=None),
+    language: str | None = Form(default=None),
+    description: str | None = Form(default=None),
     user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     service = _get_file_service(db)
 
     try:
-        stored_file = service.upload_admin_file(user, file)
+        stored_file = service.upload_admin_file(
+            user,
+            file,
+            title=title,
+            version_date=version_date,
+            language=language,
+            description=description,
+        )
     except Exception as e:
         logger.exception(
             "Admin file upload failed",
@@ -146,7 +158,7 @@ async def upload_customer_file(
     summary="Список административных файлов",
 )
 def list_admin_files(
-    search: str | None = Query(default=None, description="Фильтр по имени файла"),
+    search: str | None = Query(default=None, description="Поиск (имя файла / название / описание / язык)"),
     user=Depends(get_current_user),
     service: FileService = Depends(_get_file_service),
 ):
