@@ -17,6 +17,8 @@ Pipeline Layers:
 
 import asyncio
 import logging
+import os
+import time
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -35,8 +37,11 @@ from app.modules.files.qdrant_client import QdrantVectorStore
 from app.modules.files.models import FileScope, FileChunk, StoredFile
 from app.modules.embeddings.service import EmbeddingService, get_embedding_service
 from app.core.logging import get_logger
+from app.core.config import settings
 
 logger = get_logger(__name__)
+
+_LIGHTRAG_QUERY_TIMEOUT_S = float(os.getenv("LIGHTRAG_QUERY_TIMEOUT_S", "8") or "8")
 
 
 class IntentClass(Enum):
@@ -55,6 +60,10 @@ class IntentClass(Enum):
     DISCLOSURE_DRAFTING = "disclosure_drafting"
     MODEL_OPS_FORMATTING = "model_ops_formatting"
     SMALLTALK = "smalltalk"
+
+
+class _ExtraIntent(Enum):
+    BANKS_IN_DOCS = "banks_in_docs"
 
 
 @dataclass
@@ -91,11 +100,24 @@ class EnhancedRAGPipeline:
         db: Session,
         gemini_api: GeminiAPI,
         qdrant_store: QdrantVectorStore,
+        qdrant_store_admin: Optional[QdrantVectorStore] = None,
+        qdrant_store_client: Optional[QdrantVectorStore] = None,
         embedding_service: Optional[EmbeddingService] = None,
     ):
+        """
+        Initialize RAG pipeline with two Qdrant namespaces per TZ:
+        - qdrant_store_admin: G1 (oson_knowledge) for Knowledge Base / Block B
+        - qdrant_store_client: G1_Client (client_documents) for client documents
+        
+        For backward compatibility, qdrant_store is used as fallback.
+        """
         self.db = db
         self.gemini_api = gemini_api
+        # Legacy single store (backward compatibility)
         self.qdrant_store = qdrant_store
+        # Two namespaces per TZ
+        self.qdrant_store_admin = qdrant_store_admin or qdrant_store
+        self.qdrant_store_client = qdrant_store_client or qdrant_store
         self.embedding_service = embedding_service or get_embedding_service()
         
         # Initialize components
@@ -111,7 +133,13 @@ class EnhancedRAGPipeline:
         # Cache for prompts
         self._prompt_cache = {}
         
-        logger.info("EnhancedRAGPipeline initialized with all components")
+        logger.info(
+            "EnhancedRAGPipeline initialized",
+            extra={
+                "has_admin_store": qdrant_store_admin is not None,
+                "has_client_store": qdrant_store_client is not None,
+            },
+        )
         
     async def process_query(
         self,
@@ -129,7 +157,21 @@ class EnhancedRAGPipeline:
         """
         Full pipeline processing with all layers.
         """
-        logger.info(f"Processing query for customer {customer_id}, user {user_id}")
+        pipeline_start = time.time()
+        
+        logger.info(
+            "RAG_PIPELINE: Query received",
+            extra={
+                "customer_id": customer_id,
+                "user_id": user_id,
+                "tenant_id": tenant_id,
+                "question_length": len(question),
+                "include_admin_laws": include_admin_laws,
+                "include_customer_docs": include_customer_docs,
+                "mode": mode,
+                "top_k": top_k,
+            },
+        )
         
         # 1. Policy Gate
         policy_result = self._policy_gate(
@@ -143,7 +185,19 @@ class EnhancedRAGPipeline:
         )
         
         if not policy_result.allowed_collections:
+            logger.warning(
+                "RAG_PIPELINE: Access denied by policy gate",
+                extra={"user_id": user_id, "tenant_id": tenant_id},
+            )
             raise PermissionError("Access denied by policy gate")
+        
+        logger.info(
+            "RAG_PIPELINE: Policy gate passed",
+            extra={
+                "allowed_scopes": policy_result.allowed_scopes,
+                "max_k": policy_result.max_k,
+            },
+        )
         
         # 2. Load Conversation State
         conversation_state = self._load_conversation_state(
@@ -151,10 +205,31 @@ class EnhancedRAGPipeline:
             policy_result.max_context_tokens
         )
         
+        logger.debug(
+            "RAG_PIPELINE: Conversation state loaded",
+            extra={
+                "has_summary": bool(conversation_state.get("rolling_summary")),
+                "last_turns_count": len(conversation_state.get("last_turns", [])),
+                "chat_memories_count": len(conversation_state.get("chat_memories", [])),
+            },
+        )
+        
         # 3. Query Router/Planner
         query_plan = self._route_and_plan(question, conversation_state)
         
+        logger.info(
+            "RAG_PIPELINE: Query routed",
+            extra={
+                "intent": query_plan.intent.value,
+                "required_evidence": query_plan.required_evidence,
+                "admin_law_budget": query_plan.admin_law_budget,
+                "customer_doc_budget": query_plan.customer_doc_budget,
+                "governing_standards": query_plan.governing_standards[:3] if query_plan.governing_standards else [],
+            },
+        )
+        
         # 4. Evidence Retrieval
+        t_retrieval = time.time()
         evidence_results = await self._retrieve_evidence(
             question=question,
             customer_id=customer_id,
@@ -163,16 +238,41 @@ class EnhancedRAGPipeline:
             policy_result=policy_result,
             conversation_state=conversation_state,
         )
+        retrieval_time = time.time() - t_retrieval
+        
+        logger.info(
+            "RAG_PIPELINE: Evidence retrieved",
+            extra={
+                "evidence_count": len(evidence_results),
+                "retrieval_time_ms": int(retrieval_time * 1000),
+            },
+        )
         
         # 5. Merge/Dedupe/MMR
         merged_evidence = self._merge_and_dedupe(evidence_results)
         merged_evidence = self._filter_noise(merged_evidence, query_plan)
         
+        logger.debug(
+            "RAG_PIPELINE: Evidence merged and filtered",
+            extra={"merged_count": len(merged_evidence)},
+        )
+        
         # 6. Reranker
+        t_rerank = time.time()
         ranked_evidence = await self._rerank_evidence(
             question=question,
             evidence=merged_evidence,
             plan=query_plan,
+        )
+        rerank_time = time.time() - t_rerank
+        
+        logger.info(
+            "RAG_PIPELINE: Evidence reranked",
+            extra={
+                "input_count": len(merged_evidence),
+                "output_count": len(ranked_evidence),
+                "rerank_time_ms": int(rerank_time * 1000),
+            },
         )
         
         # 7. Evidence Builder
@@ -195,14 +295,46 @@ class EnhancedRAGPipeline:
             lightrag_hints=lightrag_hints,
         )
         
+        logger.debug(
+            "RAG_PIPELINE: Prompt assembled",
+            extra={
+                "prompt_length": len(final_prompt),
+                "has_lightrag_hints": bool(lightrag_hints),
+            },
+        )
+        
         # 9. Gemini Generation
+        t_generation = time.time()
         raw_response = await self._generate_response(final_prompt, query_plan.temperature)
+        generation_time = time.time() - t_generation
+        
+        logger.info(
+            "RAG_PIPELINE: Response generated",
+            extra={
+                "success": raw_response.get("success", False),
+                "response_length": len(raw_response.get("text", "")),
+                "generation_time_ms": int(generation_time * 1000),
+            },
+        )
         
         # 10. Grounding Check
         grounded_response = await self._grounding_check(
             question=question,
             response=raw_response,
             evidence_pack=evidence_pack,
+        )
+        
+        # Calculate total pipeline time
+        total_time = time.time() - pipeline_start
+        
+        logger.info(
+            "RAG_PIPELINE: Query complete",
+            extra={
+                "total_time_ms": int(total_time * 1000),
+                "grounding_score": grounded_response.get("score", 0.0),
+                "evidence_used": len(evidence_pack["evidence"]),
+                "intent": query_plan.intent.value,
+            },
         )
         
         # 11. Memory Update (handled by caller)
@@ -219,6 +351,10 @@ class EnhancedRAGPipeline:
                 "intent": query_plan.intent.value,
                 "evidence_count": len(evidence_pack["evidence"]),
                 "total_tokens": len(final_prompt),
+                "total_time_ms": int(total_time * 1000),
+                "retrieval_time_ms": int(retrieval_time * 1000),
+                "rerank_time_ms": int(rerank_time * 1000),
+                "generation_time_ms": int(generation_time * 1000),
                 "processing_time": datetime.utcnow().isoformat(),
                 "lightrag_second_signal": bool(lightrag_hints),
             }
@@ -229,8 +365,25 @@ class EnhancedRAGPipeline:
             return self._lightrag_cache[workspace]
 
         try:
+            base_dir = Path(settings.LIGHTRAG_WORKING_DIR)
+            vdb_path = base_dir / workspace / "vdb_chunks.json"
+            if not vdb_path.exists():
+                self._lightrag_cache[workspace] = None
+                return None
+            try:
+                raw = vdb_path.read_text(encoding="utf-8", errors="ignore").strip()
+                if not raw or raw == "[]" or raw == "{}":
+                    self._lightrag_cache[workspace] = None
+                    return None
+            except Exception:
+                # If we can't read it, let LightRAG attempt to initialize.
+                pass
+        except Exception:
+            pass
+
+        try:
             svc = create_lightrag_service(
-                working_dir="./lightrag_cache",
+                working_dir=settings.LIGHTRAG_WORKING_DIR,
                 workspace=workspace,
             )
             self._lightrag_cache[workspace] = svc
@@ -265,14 +418,16 @@ class EnhancedRAGPipeline:
             admin_svc = self._get_lightrag("admin_law")
             if admin_svc is not None:
                 try:
-                    merged["admin_law"] = await admin_svc.aquery_hints(
-                        question=question,
-                        mode=mode,
-                        top_k=max(5, int(top_k / 2)),
-                        enable_rerank=True,
+                    merged["admin_law"] = await asyncio.wait_for(
+                        admin_svc.aquery_hints(
+                            question=question,
+                            mode=mode,
+                            top_k=max(5, int(top_k / 2)),
+                        ),
+                        timeout=_LIGHTRAG_QUERY_TIMEOUT_S,
                     )
                 except Exception as e:
-                    logger.warning(f"LightRAG admin second-signal failed: {e}")
+                    logger.warning("LightRAG admin_law query failed: %s", e)
 
         allowed_customer_ids = set(policy_result.allowed_customer_ids or [])
         if (
@@ -283,17 +438,19 @@ class EnhancedRAGPipeline:
             and customer_id in allowed_customer_ids
         ):
             customer_workspace = f"customer_{customer_id}"
-            customer_svc = self._get_lightrag(customer_workspace)
+            customer_svc = self._get_lightrag(f"customer_{customer_id}")
             if customer_svc is not None:
                 try:
-                    merged["customer"] = await customer_svc.aquery_hints(
-                        question=question,
-                        mode=mode,
-                        top_k=top_k,
-                        enable_rerank=True,
+                    merged["customer"] = await asyncio.wait_for(
+                        customer_svc.aquery_hints(
+                            question=question,
+                            mode=mode,
+                            top_k=max(5, int(top_k / 2)),
+                        ),
+                        timeout=_LIGHTRAG_QUERY_TIMEOUT_S,
                     )
                 except Exception as e:
-                    logger.warning(f"LightRAG customer second-signal failed: {e}")
+                    logger.warning("LightRAG customer query failed: %s", e)
 
         return merged
     
@@ -401,6 +558,24 @@ class EnhancedRAGPipeline:
             admin_budget = 2
             customer_budget = 8
             patterns = ["signatories", "names", "roles"]
+
+        if any(
+            word in question_lower
+            for word in [
+                "банк",
+                "банки",
+                "bank",
+                "iban",
+                "bic",
+                "swift",
+            ]
+        ):
+            # Prefer customer documents for bank-related questions (contracts, requisites, payments)
+            intent = IntentClass.CYCLE_DEEP_DIVE
+            required_evidence = "must_cite"
+            admin_budget = max(admin_budget, 1)
+            customer_budget = max(customer_budget, 8)
+            patterns = patterns + ["bank_details", "iban", "bic", "swift"]
 
         # Legal matters have highest priority
         if any(word in question_lower for word in ["lawsuit", "иск", "legal", "юр", "court", "регулятор"]):
@@ -518,17 +693,17 @@ class EnhancedRAGPipeline:
         # Create query embedding (placeholder - should use real embeddings)
         query_vector = self._create_query_embedding(question)
         
-        # 1. ADMIN_LAW retrieval with LightRAG enrichment
+        # 1. ADMIN_LAW retrieval from G1 namespace (oson_knowledge)
         if FileScope.ADMIN_LAW.value in policy_result.allowed_scopes and plan.admin_law_budget > 0:
-            # Dense retrieval from Qdrant
-            admin_filter = self.qdrant_store.build_filter(
+            # Dense retrieval from admin Qdrant namespace (G1)
+            admin_filter = self.qdrant_store_admin.build_filter(
                 scope=FileScope.ADMIN_LAW.value,
                 customer_id=None,
                 owner_id=None,
             )
             
             try:
-                admin_points = self.qdrant_store.search(
+                admin_points = self.qdrant_store_admin.search(
                     query_vector=query_vector,
                     limit=plan.admin_law_budget,
                     filter_=admin_filter,
@@ -552,24 +727,30 @@ class EnhancedRAGPipeline:
                         "text": chunk_text_value,
                         "citation": f"scope=ADMIN_LAW source={payload.get('file_id')} chunk={payload.get('chunk_index')}",
                         "trust_level": "official",
+                        # Extended payload fields per TZ
+                        "block": payload.get("block"),
+                        "section": payload.get("section"),
+                        "section_level": payload.get("section_level"),
+                        "isa_reference": payload.get("isa_reference", []),
+                        "cycle": payload.get("cycle"),
                     })
             except Exception as e:
                 logger.error(f"ADMIN_LAW retrieval failed: {e}")
         
-        # 2. CUSTOMER_DOC retrieval (dense + sparse simulation)
+        # 2. CUSTOMER_DOC retrieval from G1_Client namespace (client_documents)
         if FileScope.CUSTOMER_DOC.value in policy_result.allowed_scopes and plan.customer_doc_budget > 0:
             allowed_customer_ids = policy_result.allowed_customer_ids or []
             if allowed_customer_ids:
                 per_customer_limit = max(1, int(plan.customer_doc_budget / len(allowed_customer_ids)))
                 for allowed_customer_id in allowed_customer_ids:
-                    customer_filter = self.qdrant_store.build_filter(
+                    customer_filter = self.qdrant_store_client.build_filter(
                         scope=FileScope.CUSTOMER_DOC.value,
                         customer_id=allowed_customer_id,
                         owner_id=None,
                     )
 
                     try:
-                        customer_points = self.qdrant_store.search(
+                        customer_points = self.qdrant_store_client.search(
                             query_vector=query_vector,
                             limit=per_customer_limit,
                             filter_=customer_filter,
@@ -593,6 +774,12 @@ class EnhancedRAGPipeline:
                                 "text": chunk_text_value,
                                 "citation": f"scope=CUSTOMER_DOC source={payload.get('file_id')} chunk={payload.get('chunk_index')}",
                                 "trust_level": "client_provided",
+                                # Extended payload fields per TZ
+                                "block": payload.get("block"),
+                                "section": payload.get("section"),
+                                "section_level": payload.get("section_level"),
+                                "isa_reference": payload.get("isa_reference", []),
+                                "cycle": payload.get("cycle"),
                             })
                     except Exception as e:
                         logger.error(f"CUSTOMER_DOC retrieval failed: {e}")

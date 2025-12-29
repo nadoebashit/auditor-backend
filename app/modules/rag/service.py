@@ -54,17 +54,24 @@ class RAGService:
         self.qdrant_store_client = qdrant_store_client
         self.use_enhanced_pipeline = use_enhanced_pipeline
         
-        # Инициализация улучшенного пайплайна
-        # NOTE: EnhancedRAGPipeline now requires DB session; prompts are optional.
-        # Enhanced pipeline currently supports a single Qdrant store.
-        qdrant_for_pipeline = qdrant_store_client or qdrant_store_admin
+        # Инициализация улучшенного пайплайна с двумя Qdrant namespaces
+        # G1 (oson_knowledge) для Knowledge Base, G1_Client (client_documents) для клиентских документов
+        qdrant_for_pipeline = qdrant_store_admin or qdrant_store_client
         if use_enhanced_pipeline and db and qdrant_for_pipeline:
             self.enhanced_pipeline = EnhancedRAGPipeline(
                 db=db,
                 gemini_api=gemini_api,
                 qdrant_store=qdrant_for_pipeline,
+                qdrant_store_admin=qdrant_store_admin,
+                qdrant_store_client=qdrant_store_client,
             )
-            logger.info("Enhanced RAG pipeline initialized")
+            logger.info(
+                "Enhanced RAG pipeline initialized with two namespaces",
+                extra={
+                    "has_admin_store": qdrant_store_admin is not None,
+                    "has_client_store": qdrant_store_client is not None,
+                },
+            )
         else:
             self.enhanced_pipeline = None
             if use_enhanced_pipeline:

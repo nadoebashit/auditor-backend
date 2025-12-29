@@ -10,7 +10,7 @@ from app.modules.auth.router import get_current_user
 from app.modules.auth.models import User
 from app.modules.files.qdrant_client import QdrantVectorStore
 from app.modules.prompts.service import PromptsService
-from app.modules.rag.gemini import GeminiAPI
+from app.modules.rag.gemini import GeminiAPI, get_gemini_api
 from app.modules.rag.schemas import (
     RAGDeleteResponse,
     RAGEvidenceRequest,
@@ -33,7 +33,7 @@ def _get_rag_service(db: Session = Depends(get_db)) -> RAGService:
     from app.core.config import settings
     from app.modules.files.qdrant_client import QdrantVectorStore
     
-    gemini_api = GeminiAPI()
+    gemini_api = get_gemini_api()
     
     qdrant_store_admin = None
     qdrant_store_client = None

@@ -19,6 +19,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.modules.files.chunking import (
+    chunk_by_section,
+    chunk_text_simple,
+    Chunk,
+    ChunkMetadata,
+    extract_isa_references,
+    detect_audit_cycle,
+)
 from app.modules.files.file_text_extractor import extract_text
 from app.modules.files.models import FileChunk, FileIndexStatus, FileScope, StoredFile
 from app.modules.files.qdrant_client import QdrantVectorStore
@@ -45,20 +53,11 @@ class EmbeddingProvider:
 
 
 def chunk_text(text: str, chunk_size: int | None = None) -> List[str]:
-    """Разбивает текст на чанки."""
-    if chunk_size is None:
-        chunk_size = settings.CHUNK_SIZE
-
-    if not text:
-        return []
-
-    chunks = []
-    for i in range(0, len(text), chunk_size):
-        chunk = text[i : i + chunk_size]
-        if chunk.strip():
-            chunks.append(chunk)
-
-    return chunks
+    """
+    Разбивает текст на чанки (обратная совместимость).
+    Для section-based используйте chunk_by_section().
+    """
+    return chunk_text_simple(text, chunk_size)
 
 
 class HybridFileService:
@@ -251,17 +250,38 @@ class HybridFileService:
                 return metrics
 
             # ═══════════════════════════════════════════
-            # ШАГ 3: ЧАНКИНГ
+            # ШАГ 3: ЧАНКИНГ (Section-based для Block B)
             # ═══════════════════════════════════════════
             t_start = time.time()
 
-            chunks = chunk_text(text, chunk_size=settings.CHUNK_SIZE)
-            metrics["num_chunks"] = len(chunks)
+            # Используем section-based chunking для структурированных документов
+            section_chunks = chunk_by_section(
+                text,
+                chunk_size=settings.CHUNK_SIZE,
+                overlap=100,
+                min_chunk_size=50,
+            )
+            
+            # Извлекаем ISA ссылки из всего документа
+            doc_isa_refs = extract_isa_references(text)
+            doc_cycle = detect_audit_cycle(text)
+            
+            metrics["num_chunks"] = len(section_chunks)
+            metrics["chunking_strategy"] = "section_based" if len(section_chunks) > 1 else "size_based"
+            metrics["isa_references"] = doc_isa_refs
+            metrics["audit_cycle"] = doc_cycle
             metrics["times"]["chunking"] = time.time() - t_start
 
             logger.info(
-                f"Text chunked: {len(chunks)} chunks",
-                extra={"file_id": str(file_id), "chunks": len(chunks)},
+                "RAG_PIPELINE: Chunking complete",
+                extra={
+                    "file_id": str(file_id),
+                    "num_chunks": len(section_chunks),
+                    "strategy": metrics["chunking_strategy"],
+                    "isa_refs": doc_isa_refs[:5] if doc_isa_refs else [],
+                    "cycle": doc_cycle,
+                    "chunking_time_ms": int(metrics["times"]["chunking"] * 1000),
+                },
             )
 
             # Метаданные
@@ -297,10 +317,12 @@ class HybridFileService:
                 try:
                     self._index_to_qdrant(
                         stored_file=stored_file,
-                        chunks=chunks,
+                        section_chunks=section_chunks,
                         base_metadata=base_metadata,
                         metrics=metrics,
                         vector_store=vector_store,
+                        doc_isa_refs=doc_isa_refs,
+                        doc_cycle=doc_cycle,
                     )
 
                     metrics["times"]["qdrant_total"] = time.time() - t_start
@@ -330,9 +352,11 @@ class HybridFileService:
                 t_start = time.time()
 
                 try:
+                    # Для LightRAG используем только тексты
+                    chunk_texts = [c.text for c in section_chunks]
                     self._index_to_lightrag(
                         stored_file=stored_file,
-                        chunks=chunks,
+                        chunks=chunk_texts,
                         base_metadata=base_metadata,
                         metrics=metrics,
                     )
@@ -419,58 +443,102 @@ class HybridFileService:
     def _index_to_qdrant(
         self,
         stored_file: StoredFile,
-        chunks: List[str],
+        section_chunks: List[Chunk],
         base_metadata: Dict[str, Any],
         metrics: Dict[str, Any],
         vector_store: QdrantVectorStore,
+        doc_isa_refs: List[str] | None = None,
+        doc_cycle: str | None = None,
     ) -> None:
-        """Индексация в Qdrant с batch embeddings."""
+        """
+        Индексация в Qdrant с batch embeddings и расширенным payload.
+        
+        Расширенный payload по ТЗ:
+        - block: Block B для Knowledge Base
+        - section: название секции из документа
+        - isa_reference: список ссылок на ISA стандарты
+        - cycle: цикл аудита (acceptance, planning, execution, reporting, completion)
+        """
+        if not section_chunks:
+            logger.warning("No chunks to index to Qdrant")
+            return
 
-        # ШАГ 1: Batch эмбеддинги (БЫСТРО!)
+        # ШАГ 1: Batch эмбеддинги
         t_start = time.time()
-
-        embeddings = self.embedding_provider.embed_batch(chunks)
+        
+        chunk_texts = [c.text for c in section_chunks]
+        embeddings = self.embedding_provider.embed_batch(chunk_texts)
 
         metrics["times"]["qdrant_embeddings"] = time.time() - t_start
+        
+        logger.info(
+            "RAG_PIPELINE: Embeddings generated",
+            extra={
+                "file_id": str(stored_file.id),
+                "num_embeddings": len(embeddings),
+                "embedding_time_ms": int(metrics["times"]["qdrant_embeddings"] * 1000),
+            },
+        )
 
-        # ШАГ 2: Создание FileChunk + PointStruct
+        # ШАГ 2: Создание FileChunk + PointStruct с расширенным payload
         t_start = time.time()
 
         qdrant_points: List[PointStruct] = []
         chunk_rows: List[FileChunk] = []
 
-        for idx, (chunk_text, _embedding) in enumerate(zip(chunks, embeddings)):
+        for section_chunk, _embedding in zip(section_chunks, embeddings):
+            meta = section_chunk.metadata
+            
+            # Извлекаем ISA ссылки из конкретного чанка (дополняет документные)
+            chunk_isa_refs = extract_isa_references(section_chunk.text)
+            combined_isa_refs = list(set((doc_isa_refs or []) + chunk_isa_refs))
+            
+            # Определяем цикл для чанка (fallback на документный)
+            chunk_cycle = detect_audit_cycle(section_chunk.text) or doc_cycle
+            
             chunk = FileChunk(
                 file_id=stored_file.id,
-                chunk_index=idx,
-                text=chunk_text,
+                chunk_index=meta.chunk_index,
+                text=section_chunk.text,
                 customer_id=stored_file.customer_id,
                 owner_id=str(stored_file.owner_id),
                 scope=stored_file.scope.value,
                 source_type=stored_file.content_type or None,
             )
             self.db.add(chunk)
-            chunk_rows.append(chunk)
+            chunk_rows.append((chunk, section_chunk, combined_isa_refs, chunk_cycle))
 
         # Ensure UUIDs are generated before we reference chunk.id
         self.db.flush()
 
-        for chunk, embedding in zip(chunk_rows, embeddings):
+        for chunk, section_chunk, isa_refs, cycle in chunk_rows:
+            meta = section_chunk.metadata
             chunk_id = str(chunk.id)
             point_id = chunk_id
             chunk.qdrant_point_id = point_id
 
+            # Расширенный payload по ТЗ
+            payload = {
+                **base_metadata,
+                "chunk_id": chunk_id,
+                "file_id": str(chunk.file_id),
+                "chunk_index": int(chunk.chunk_index),
+                "text": chunk.text,
+                # Новые поля по ТЗ
+                "block": meta.block,
+                "section": meta.section_title,
+                "section_level": meta.section_level,
+                "isa_reference": isa_refs,
+                "cycle": cycle,
+                "char_start": meta.char_start,
+                "char_end": meta.char_end,
+            }
+            
             qdrant_points.append(
                 PointStruct(
                     id=point_id,
-                    vector=embedding,
-                    payload={
-                        **base_metadata,
-                        "chunk_id": chunk_id,
-                        "file_id": str(chunk.file_id),
-                        "chunk_index": int(chunk.chunk_index),
-                        "text": chunk.text,
-                    },
+                    vector=_embedding,
+                    payload=payload,
                 )
             )
 
@@ -492,7 +560,13 @@ class HybridFileService:
         metrics["qdrant_batches"] = num_batches
 
         logger.info(
-            f"Indexed to Qdrant: {len(qdrant_points)} points in {num_batches} batches"
+            "RAG_PIPELINE: Qdrant indexing complete",
+            extra={
+                "file_id": str(stored_file.id),
+                "num_points": len(qdrant_points),
+                "num_batches": num_batches,
+                "upsert_time_ms": int(metrics["times"]["qdrant_upsert"] * 1000),
+            },
         )
 
     def _index_to_lightrag(

@@ -43,10 +43,11 @@ class Settings(BaseSettings):
     LIGHTRAG_SEND_DIMENSIONS: bool = False
 
     # Qdrant (Hybrid RAG)
+    # По ТЗ: G1 (oson_knowledge) для Knowledge Base, G1_Client (client_documents) для клиентских документов
     QDRANT_URL: str
-    QDRANT_COLLECTION_NAME: str
-    QDRANT_COLLECTION_ADMIN: str | None = None
-    QDRANT_COLLECTION_CLIENT: str | None = None
+    QDRANT_COLLECTION_NAME: str = "oson_knowledge"  # Default/legacy collection
+    QDRANT_COLLECTION_ADMIN: str = "oson_knowledge"  # G1: Knowledge Base (Block B)
+    QDRANT_COLLECTION_CLIENT: str = "client_documents"  # G1_Client: Client documents
     QDRANT_VECTOR_SIZE: int = 768  # Gemini embedding size
     QDRANT_CHAT_MEMORY_COLLECTION: str = "chat_memory"
 

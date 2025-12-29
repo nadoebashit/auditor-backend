@@ -19,7 +19,7 @@ from app.modules.files.storage import FileStorage, S3Config
 from app.modules.files.file_text_extractor import extract_text
 from app.modules.rag.lightrag_integration import create_lightrag_service
 from app.modules.embeddings.service import get_embedding_service
-from app.modules.rag.gemini import GeminiAPI
+from app.modules.rag.gemini import GeminiAPI, get_gemini_api
 
 logger = get_logger(__name__)
 
@@ -49,17 +49,13 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
 
     # Gemini client (LLM + embeddings) - used by HybridFileService (Qdrant pipeline)
-    ctx["gemini"] = GeminiAPI()
+    ctx["gemini"] = get_gemini_api()
 
-    # Qdrant vector stores (admin vs client)
-    admin_collection = (
-        getattr(settings, "QDRANT_COLLECTION_ADMIN", None)
-        or settings.QDRANT_COLLECTION_NAME
-    )
-    client_collection = (
-        getattr(settings, "QDRANT_COLLECTION_CLIENT", None)
-        or settings.QDRANT_COLLECTION_NAME
-    )
+    # Qdrant vector stores (two namespaces per TZ)
+    # G1: oson_knowledge (Knowledge Base / Block B)
+    # G1_Client: client_documents (Client documents)
+    admin_collection = settings.QDRANT_COLLECTION_ADMIN
+    client_collection = settings.QDRANT_COLLECTION_CLIENT
 
     ctx["qdrant_admin"] = QdrantVectorStore(
         url=settings.QDRANT_URL,
@@ -71,26 +67,19 @@ async def startup(ctx: dict[str, Any]) -> None:
         collection_name=client_collection,
         vector_size=settings.QDRANT_VECTOR_SIZE,
     )
+    
+    logger.info(
+        "Qdrant namespaces initialized",
+        extra={
+            "admin_collection": admin_collection,
+            "client_collection": client_collection,
+            "vector_size": settings.QDRANT_VECTOR_SIZE,
+        },
+    )
 
-    # LightRAG (graph-based RAG). Optional.
-    try:
-        # IMPORTANT: our production LightRAG integration is self-contained and
-        # does NOT accept gemini_api instance (avoids pickle/thread locks and API mismatch).
-        service = create_lightrag_service(
-            working_dir=settings.LIGHTRAG_WORKING_DIR,
-        )
-
-        # If integration returns disabled service, treat as unavailable
-        if hasattr(service, "is_ready") and not service.is_ready():
-            ctx["lightrag"] = None
-            logger.warning("LightRAG created but not ready; fallback to Qdrant-only")
-        else:
-            ctx["lightrag"] = service
-            logger.info("LightRAG initialized in worker context")
-
-    except Exception:
-        ctx["lightrag"] = None
-        logger.exception("LightRAG init failed; worker will index only to Qdrant")
+    # LightRAG (graph-based RAG) is initialized per-workspace inside index_file_task.
+    # Initializing it here without a workspace creates an empty root workspace on disk.
+    ctx["lightrag"] = None
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -167,7 +156,7 @@ async def index_file_task(ctx: dict[str, Any], file_id: str) -> None:
                         workspace = f"customer_{stored_file.customer_id}"
 
                     lightrag = create_lightrag_service(
-                        working_dir="./lightrag_cache",
+                        working_dir=settings.LIGHTRAG_WORKING_DIR,
                         workspace=workspace,
                     )
 

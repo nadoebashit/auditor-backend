@@ -75,7 +75,7 @@ if LIGHTRAG_AVAILABLE:
 if not LIGHTRAG_AVAILABLE:
     logging.getLogger(__name__).debug("LIGHTRAG not installed. Install with: pip install lightrag")
 
-from app.modules.rag.gemini import GeminiAPI
+from app.modules.rag.gemini import GeminiAPI, get_gemini_api
 from app.modules.files.qdrant_client import QdrantVectorStore
 from app.core.config import settings
 from app.modules.embeddings.service import EmbeddingService, get_embedding_service
@@ -115,8 +115,10 @@ async def _lightrag_llm_complete(
     system_prompt: Optional[str] = None,
     **kwargs,
 ) -> str:
+    """LightRAG LLM completion using singleton GeminiAPI."""
     full_prompt = prompt if not system_prompt else f"{system_prompt}\n\n{prompt}"
-    gemini = GeminiAPI()
+    # Use singleton to avoid re-initialization on every call
+    gemini = get_gemini_api()
     return await asyncio.to_thread(gemini.generate_text, full_prompt)
 
 
@@ -156,10 +158,36 @@ class LightRAGService:
         
         self._executor = ThreadPoolExecutor(max_workers=1)
 
+        # LightRAG parallelism settings - reduce to avoid Gemini rate limits
+        # MAX_ASYNC: max concurrent async operations (default 1 for rate limiting)
+        # MAX_PARALLEL_INSERT: max parallel document inserts (default 1)
+        # These are critical for free-tier Gemini API to avoid 429 errors
         if os.getenv("MAX_ASYNC") is None:
             os.environ["MAX_ASYNC"] = "1"
         if os.getenv("MAX_PARALLEL_INSERT") is None:
             os.environ["MAX_PARALLEL_INSERT"] = "1"
+        # Additional LightRAG settings to reduce API load
+        if os.getenv("LIGHTRAG_LLM_WORKERS") is None:
+            os.environ["LIGHTRAG_LLM_WORKERS"] = "1"  # Reduce from default 4
+        if os.getenv("LIGHTRAG_EMBEDDING_WORKERS") is None:
+            os.environ["LIGHTRAG_EMBEDDING_WORKERS"] = "2"  # Reduce from default 8
+        
+        if os.getenv("EMBEDDING_FUNC_MAX_ASYNC") is None:
+            os.environ["EMBEDDING_FUNC_MAX_ASYNC"] = os.getenv("LIGHTRAG_EMBEDDING_WORKERS", "2")
+        if os.getenv("EMBEDDING_BATCH_NUM") is None:
+            os.environ["EMBEDDING_BATCH_NUM"] = "1"
+
+        logger.info(
+            "LightRAG parallelism configured",
+            extra={
+                "MAX_ASYNC": os.getenv("MAX_ASYNC"),
+                "MAX_PARALLEL_INSERT": os.getenv("MAX_PARALLEL_INSERT"),
+                "LLM_WORKERS": os.getenv("LIGHTRAG_LLM_WORKERS"),
+                "EMBEDDING_WORKERS": os.getenv("LIGHTRAG_EMBEDDING_WORKERS"),
+                "EMBEDDING_FUNC_MAX_ASYNC": os.getenv("EMBEDDING_FUNC_MAX_ASYNC"),
+                "EMBEDDING_BATCH_NUM": os.getenv("EMBEDDING_BATCH_NUM"),
+            },
+        )
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_thread: threading.Thread | None = None

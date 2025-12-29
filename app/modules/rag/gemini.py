@@ -29,15 +29,52 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 class _GeminiRpmLimiter:
-    def __init__(self, rpm: int):
-        self._rpm = max(0, int(rpm))
+    """
+    Global rate limiter for Gemini API calls.
+    
+    Enforces:
+    - RPM (requests per minute) limit
+    - Minimum interval between calls (prevents bursts)
+    - Global semaphore to limit concurrent requests
+    """
+    
+    def __init__(self, rpm: int, max_concurrent: int = 2):
+        self._rpm = max(1, int(rpm))
+        self._max_concurrent = max(1, int(max_concurrent))
         self._lock = threading.Lock()
         self._calls: deque[float] = deque()
+        # Global semaphore to limit concurrent Gemini calls
+        self._semaphore = threading.Semaphore(self._max_concurrent)
+        
+    @property
+    def rpm(self) -> int:
+        return self._rpm
+    
+    @property
+    def max_concurrent(self) -> int:
+        return self._max_concurrent
 
     def acquire(self) -> None:
-        if self._rpm <= 0:
-            return
-
+        """Acquire rate limit slot. Blocks until slot is available."""
+        # First acquire semaphore (limits concurrent requests)
+        self._semaphore.acquire()
+        
+        try:
+            self._wait_for_rpm_slot()
+        except Exception:
+            # Release semaphore if RPM wait fails
+            self._semaphore.release()
+            raise
+    
+    def release(self) -> None:
+        """Release the semaphore slot after request completes."""
+        try:
+            self._semaphore.release()
+        except ValueError:
+            pass  # Already released
+    
+    def _wait_for_rpm_slot(self) -> None:
+        """Wait until we have an available RPM slot."""
         window_s = 60.0
         min_interval_s = window_s / float(self._rpm)
 
@@ -49,20 +86,34 @@ class _GeminiRpmLimiter:
                 while self._calls and (now - self._calls[0]) > window_s:
                     self._calls.popleft()
 
+                # Check if we're at RPM limit
+                if len(self._calls) >= self._rpm:
+                    # Wait until oldest call expires from window
+                    sleep_s = window_s - (now - self._calls[0]) + 0.1
                 # Enforce min spacing between calls (prevents bursts)
-                if self._calls:
+                elif self._calls:
                     elapsed = now - self._calls[-1]
                     if elapsed < min_interval_s:
                         sleep_s = min_interval_s - elapsed
-                if sleep_s == 0.0:
+                
+                if sleep_s <= 0.0:
                     self._calls.append(now)
                     return
 
             time.sleep(sleep_s)
 
 
-_GEMINI_RPM_LIMIT = int(os.getenv("GEMINI_RPM_LIMIT", "5") or "5")
-_gemini_rpm_limiter = _GeminiRpmLimiter(_GEMINI_RPM_LIMIT)
+# Rate limiter configuration from environment
+# GEMINI_RPM_LIMIT: requests per minute (default 10 for free tier safety)
+# GEMINI_MAX_CONCURRENT: max concurrent requests (default 2 to avoid bursts)
+_GEMINI_RPM_LIMIT = int(os.getenv("GEMINI_RPM_LIMIT", "10") or "10")
+_GEMINI_MAX_CONCURRENT = int(os.getenv("GEMINI_MAX_CONCURRENT", "2") or "2")
+_gemini_rpm_limiter = _GeminiRpmLimiter(_GEMINI_RPM_LIMIT, _GEMINI_MAX_CONCURRENT)
+
+logger.info(
+    "Gemini rate limiter initialized",
+    extra={"rpm_limit": _GEMINI_RPM_LIMIT, "max_concurrent": _GEMINI_MAX_CONCURRENT},
+)
 
 @dataclass
 class GeminiModels:
@@ -80,9 +131,27 @@ except Exception as e:  # pragma: no cover
 
 from app.core.config import settings
 
-GEMINI_API_KEY = settings.GEMINI_API_KEY or "" 
+GEMINI_API_KEY = settings.GEMINI_API_KEY or "AIzaSyCKX9-IYxOQuaYKE7SqUOwri-CbIajHoLE" 
 MODEL_NAME = settings.GEMINI_MODEL or 'gemini-2.0-flash' 
 # FILE_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/files"
+
+# Singleton instance for GeminiAPI to avoid re-initialization on every request
+_gemini_api_instance: Optional["GeminiAPI"] = None
+_gemini_api_lock = threading.Lock()
+
+
+def get_gemini_api() -> "GeminiAPI":
+    """
+    Get singleton GeminiAPI instance.
+    Thread-safe, creates instance on first call.
+    """
+    global _gemini_api_instance
+    if _gemini_api_instance is None:
+        with _gemini_api_lock:
+            if _gemini_api_instance is None:
+                _gemini_api_instance = GeminiAPI()
+    return _gemini_api_instance
+
 
 class GeminiAPI:
     """
@@ -175,9 +244,12 @@ class GeminiAPI:
             return None
 
         last_exc: Exception | None = None
-        for attempt in range(1, 6):
+        for attempt in range(1, 8):  # Increased retries for rate limiting
+            acquired = False
             try:
                 _gemini_rpm_limiter.acquire()
+                acquired = True
+                
                 # Try to pass system_instruction if supported
                 try:
                     if system_instruction:
@@ -231,8 +303,8 @@ class GeminiAPI:
             except Exception as e:
                 last_exc = e
                 msg = str(e)
-                is_rate = ("429" in msg) or ("RESOURCE_EXHAUSTED" in msg) or ("rate" in msg.lower())
-                if attempt >= 5 or not is_rate:
+                is_rate = ("429" in msg) or ("RESOURCE_EXHAUSTED" in msg) or ("rate" in msg.lower()) or ("quota" in msg.lower())
+                if attempt >= 7 or not is_rate:
                     logger.error(
                         "Gemini generate_text failed",
                         extra={
@@ -240,20 +312,26 @@ class GeminiAPI:
                             "prompt_len": len(prompt),
                             "error": str(e),
                             "error_type": type(e).__name__,
+                            "attempt": attempt,
                         },
                     )
                     raise
 
+                # Exponential backoff with jitter for rate limiting
                 retry_s = _parse_retry_seconds(msg)
                 if retry_s is None:
-                    retry_s = min(60.0, 2.0**attempt)
-                retry_s = max(1.0, float(retry_s))
+                    # Exponential backoff: 4, 8, 16, 32, 64, 128 seconds
+                    retry_s = min(128.0, 4.0 * (2.0 ** (attempt - 1)))
+                retry_s = max(4.0, float(retry_s))  # Minimum 4 seconds
 
                 logger.warning(
                     "Gemini rate-limited; retrying",
                     extra={"attempt": attempt, "sleep_s": retry_s, "model": model_name},
                 )
                 time.sleep(retry_s)
+            finally:
+                if acquired:
+                    _gemini_rpm_limiter.release()
 
         assert last_exc is not None
         raise last_exc
@@ -313,8 +391,10 @@ class GeminiAPI:
         model: Optional[str] = None,
     ) -> List[float]:
         model_name = model or self.models.embedding
+        acquired = False
         try:
             _gemini_rpm_limiter.acquire()
+            acquired = True
             # Official REST is models.embedContent; SDK exposes equivalent under client.models.
             # Try different formats for contents parameter
             try:
@@ -499,7 +579,7 @@ class GeminiAPI:
                 raise ValueError(f"Unexpected embedding type: {type(emb)}")
                 
         except Exception as e:
-            # Check for 403 Forbidden in outer exception handler too
+            # Check for 403 Forbidden (API key or permissions issue)
             error_str = str(e).lower()
             if "403" in error_str or "forbidden" in error_str or "permission" in error_str:
                 logger.error(
@@ -528,3 +608,6 @@ class GeminiAPI:
                 },
             )
             raise
+        finally:
+            if acquired:
+                _gemini_rpm_limiter.release()
