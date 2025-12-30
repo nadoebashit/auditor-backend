@@ -24,9 +24,9 @@ from app.modules.files.schemas import (
 )
 from app.modules.files.service import FileService
 from app.modules.files.storage import FileStorage, S3Config
+from app.modules.projects.service import ensure_project_access
 
 logger = get_logger(__name__)
-
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -97,6 +97,79 @@ async def upload_admin_file(
     )
 
     return stored_file
+
+
+@router.post(
+    "/projects/{project_id}",
+    response_model=FileUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Загрузка файла проекта",
+)
+async def upload_project_file(
+    project_id: UUID,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ensure_project_access(db, project_id, user)
+    service = _get_file_service(db)
+
+    try:
+        stored_file = service.upload_customer_file(
+            user=user,
+            customer_id=str(project_id),
+            file=file,
+        )
+    except Exception as e:
+        logger.exception(
+            "Project file upload failed",
+            extra={
+                "user_id": str(getattr(user, "id", "")),
+                "project_id": str(project_id),
+                "filename": getattr(file, "filename", ""),
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload project file: {e}",
+        )
+
+    try:
+        redis = await get_arq_redis()
+        await redis.enqueue_job("index_file_task", str(stored_file.id))
+    except Exception as e:
+        logger.exception(
+            "Failed to enqueue index_file_task for project upload",
+            extra={"stored_file_id": str(getattr(stored_file, "id", "")), "project_id": str(project_id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to enqueue indexing job: {e}",
+        )
+
+    logger.info(
+        "Index file task enqueued",
+        extra={"stored_file_id": str(stored_file.id)},
+    )
+
+    return stored_file
+
+
+@router.get(
+    "/projects/{project_id}",
+    response_model=FileListResponse,
+    summary="Список файлов проекта",
+)
+def list_project_files(
+    project_id: UUID,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ensure_project_access(db, project_id, user)
+    service = _get_file_service(db)
+    owner_id = None if getattr(user, "is_admin", False) else user.id
+    files = service.list_customer_files(customer_id=str(project_id), owner_id=owner_id)
+    return {"items": files, "total": len(files)}
 
 
 @router.post(

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import json
+import uuid
 
 from sqlalchemy.orm import Session
 
@@ -280,6 +281,40 @@ class PolicyGate:
         
         # Guest has no access
         return []
+
+    def _employee_has_project_access(self, *, user_id: str, project_id: str) -> bool:
+        """Project-centric ACL: allow CUSTOMER_DOC access if employee can access the project."""
+        try:
+            user_uuid = uuid.UUID(str(user_id))
+            project_uuid = uuid.UUID(str(project_id))
+        except Exception:
+            return False
+
+        try:
+            from app.modules.projects.models import Project
+
+            project = self.db.query(Project).get(project_uuid)
+            if not project:
+                return False
+
+            if getattr(project, "assigned_employee_id", None) == user_uuid:
+                return True
+
+            if getattr(project, "created_by_id", None) == user_uuid:
+                return True
+
+            # Backward-compatible: if project.customer_id exists and that customer is assigned to the employee.
+            if getattr(project, "customer_id", None):
+                from app.modules.customers.models import Customer
+
+                customer = self.db.query(Customer).get(project.customer_id)
+                if customer and getattr(customer, "assigned_employee_id", None) == user_uuid:
+                    return True
+
+            return False
+        except Exception as e:
+            logger.error("Failed to check project access: %s", e)
+            return False
     
     def _get_allowed_customers(
         self,
@@ -296,10 +331,15 @@ class PolicyGate:
         # Employee can access assigned customers
         if role == UserRole.EMPLOYEE:
             assigned_customers = self._get_assigned_customers(user_id)
-            
+
             if requested_customer_id:
                 if requested_customer_id in assigned_customers:
                     return [requested_customer_id]
+
+                # Project-centric mode: treat requested_customer_id as project_id tenant.
+                if self._employee_has_project_access(user_id=user_id, project_id=requested_customer_id):
+                    return [requested_customer_id]
+
                 return []
             
             return assigned_customers
@@ -315,9 +355,14 @@ class PolicyGate:
         """Get customers assigned to an employee."""
         try:
             from app.modules.customers.models import Customer
-            
+
+            try:
+                user_uuid = uuid.UUID(str(user_id))
+            except Exception:
+                return []
+
             customers = self.db.query(Customer).filter(
-                Customer.assigned_employee_id == user_id
+                Customer.assigned_employee_id == user_uuid
             ).all()
             
             return [str(c.id) for c in customers]

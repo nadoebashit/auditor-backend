@@ -414,6 +414,9 @@ class LightRAGService:
         }
 
 
+_SERVICE_CACHE: dict[tuple[str, str], "LightRAGService"] = {}
+_SERVICE_CACHE_LOCK = threading.Lock()
+
 def create_lightrag_service(
     working_dir: Optional[str] = None,
     gemini_api: Optional[GeminiAPI] = None,
@@ -425,8 +428,20 @@ def create_lightrag_service(
     """
     if working_dir is None:
         working_dir = "./lightrag_cache"
+
+    ws = workspace or ""
+    key = (str(working_dir), str(ws))
+    with _SERVICE_CACHE_LOCK:
+        cached = _SERVICE_CACHE.get(key)
+        if cached is not None:
+            return cached
     
-    return LightRAGService(
+    svc = LightRAGService(
         working_dir=working_dir,
         workspace=workspace,
     )
+
+    with _SERVICE_CACHE_LOCK:
+        _SERVICE_CACHE[key] = svc
+
+    return svc

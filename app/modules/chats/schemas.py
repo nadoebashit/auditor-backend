@@ -33,6 +33,8 @@ class ChatMessageBase(BaseModel):
     sender_id: UUID | None
     role: str
     content: str
+    sources: list[dict] | None = None
+    files_used: list[str] = Field(default_factory=list, description="List of file IDs used in RAG")
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

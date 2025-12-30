@@ -136,7 +136,7 @@ async def send_message_with_rag(
     _ensure_customer_access(chat_service.db, customer_id, current_user)
     
     # Проверяем существование чата
-    chat = chat_service.get_chat_with_messages(str(chat_id), str(current_user.id))
+    chat = chat_service.get_chat_with_messages(str(chat_id))
     if not chat or chat.customer_id != customer_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found"

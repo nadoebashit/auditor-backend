@@ -19,6 +19,7 @@ import os
 import threading
 from collections import deque
 from dataclasses import dataclass
+import inspect
 import re
 import time
 from typing import Iterable, List, Optional, Sequence, Union
@@ -124,6 +125,10 @@ class GeminiModels:
 try:
     # Official SDK per docs: from google import genai; client = genai.Client()
     from google import genai
+    try:
+        from google.genai import types as genai_types  # type: ignore
+    except Exception:  # pragma: no cover
+        genai_types = None  # type: ignore
 except Exception as e:  # pragma: no cover
     raise ImportError(
         "google-genai SDK is required. Install with: pip install google-genai"
@@ -131,7 +136,7 @@ except Exception as e:  # pragma: no cover
 
 from app.core.config import settings
 
-GEMINI_API_KEY = settings.GEMINI_API_KEY or "AIzaSyCKX9-IYxOQuaYKE7SqUOwri-CbIajHoLE" 
+GEMINI_API_KEY = settings.GEMINI_API_KEY
 MODEL_NAME = settings.GEMINI_MODEL or 'gemini-2.0-flash' 
 # FILE_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/files"
 
@@ -250,6 +255,28 @@ class GeminiAPI:
                 _gemini_rpm_limiter.acquire()
                 acquired = True
                 
+                config_value: object = {
+                    "temperature": temperature,
+                    "max_output_tokens": max_output_tokens,
+                }
+                try:
+                    if genai_types is not None and hasattr(genai_types, "GenerateContentConfig"):
+                        cfg_sig = inspect.signature(genai_types.GenerateContentConfig)
+                        cfg_kwargs: dict[str, object] = {
+                            "temperature": temperature,
+                            "max_output_tokens": max_output_tokens,
+                        }
+                        if "automatic_function_calling" in cfg_sig.parameters:
+                            cfg_kwargs["automatic_function_calling"] = None
+                        if "tools" in cfg_sig.parameters:
+                            cfg_kwargs["tools"] = None
+                        config_value = genai_types.GenerateContentConfig(**cfg_kwargs)
+                except Exception:
+                    config_value = {
+                        "temperature": temperature,
+                        "max_output_tokens": max_output_tokens,
+                    }
+                
                 # Try to pass system_instruction if supported
                 try:
                     if system_instruction:
@@ -257,19 +284,13 @@ class GeminiAPI:
                             model=model_name,
                             contents=contents,
                             system_instruction=system_instruction,
-                            config={
-                                "temperature": temperature,
-                                "max_output_tokens": max_output_tokens,
-                            },
+                            config=config_value,
                         )
                     else:
                         response = self._client.models.generate_content(
                             model=model_name,
                             contents=contents,
-                            config={
-                                "temperature": temperature,
-                                "max_output_tokens": max_output_tokens,
-                            },
+                            config=config_value,
                         )
                 except (TypeError, AttributeError):
                     # Fallback: try without config parameter

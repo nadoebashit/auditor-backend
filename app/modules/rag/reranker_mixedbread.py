@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import inspect
 from dataclasses import dataclass
 from typing import Any, List, Optional, Sequence
 
@@ -49,14 +50,23 @@ class MixedbreadReranker:
         client = AsyncMixedbreadAI(api_key=self.api_key)
         k = int(top_k or self.top_k)
 
-        resp = await client.reranking(
-            model=self.model,
-            query=query,
-            input=list(documents),
-            top_k=k,
-            return_input=False,
-            rewrite_query=False,
-        )
+        base_kwargs: dict[str, Any] = {
+            "model": self.model,
+            "query": query,
+            "input": list(documents),
+            "top_k": k,
+            "return_input": False,
+            "rewrite_query": False,
+        }
+
+        try:
+            sig = inspect.signature(client.reranking)
+            supported = set(sig.parameters.keys())
+            kwargs = {k: v for k, v in base_kwargs.items() if k in supported}
+            resp = await client.reranking(**kwargs)
+        except TypeError:
+            kwargs = {k: v for k, v in base_kwargs.items() if k in {"model", "query", "input", "top_k"}}
+            resp = await client.reranking(**kwargs)
 
         data = getattr(resp, "data", None) or []
         results: List[MixedbreadRerankResult] = []

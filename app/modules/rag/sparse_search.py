@@ -156,13 +156,13 @@ class PostgresFTSSearch:
         Returns:
             List of SparseSearchResult
         """
-        # Build tsquery from user query
-        # Handle both Russian and English
-        tsquery = self._build_tsquery(query, language)
-        
+        query_normalized = self._normalize_query(query)
+        if not query_normalized:
+            return []
+
         # Build WHERE conditions
-        conditions = ["fc.search_vector @@ :tsquery"]
-        params = {"tsquery": tsquery, "limit": limit}
+        conditions = ["fc.search_vector @@ to_tsquery(:language, :query_normalized)"]
+        params = {"limit": limit}
         
         if scope:
             conditions.append("sf.scope = :scope")
@@ -200,7 +200,7 @@ class PostgresFTSSearch:
         """)
         
         params["language"] = language
-        params["query_normalized"] = self._normalize_query(query)
+        params["query_normalized"] = query_normalized
         
         try:
             result = self.db.execute(sql, params)
@@ -226,6 +226,10 @@ class PostgresFTSSearch:
             
         except Exception as e:
             logger.error(f"FTS search failed: {e}")
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
             return []
     
     def _build_tsquery(self, query: str, language: str) -> str:

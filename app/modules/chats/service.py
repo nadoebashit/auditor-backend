@@ -3,7 +3,7 @@ import logging
 import json
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.modules.chats.models import Chat, ChatMessage, SenderType
 from app.modules.rag.service import RAGService
@@ -160,6 +160,8 @@ class ChatService:
                 top_k=10,
                 temperature=0.3,
                 chat_context=last_turns,
+                rolling_summary=rolling_summary,
+                chat_memories=chat_memories,
                 tenant_id=tenant_id,
                 user_id=user_id,
             )
@@ -176,13 +178,27 @@ class ChatService:
                 "enhanced_pipeline": False,
             }
         
-        # 4. Save assistant response
+        # 4. Extract unique file IDs from RAG context
+        unique_file_ids: list[str] = []
+        try:
+            src = rag_result.get("sources_used")
+            if isinstance(src, list) and src:
+                unique_file_ids = [str(x) for x in src if x]
+            else:
+                ctx = rag_result.get("context")
+                if isinstance(ctx, list) and ctx:
+                    unique_file_ids = list({str(item.get("file_id")) for item in ctx if item.get("file_id")})
+        except Exception:
+            unique_file_ids = []
+        
+        # 5. Save assistant response
         assistant_msg = ChatMessage(
             chat_id=chat_id,
             sender_type=SenderType.ASSISTANT,
             sender_id=None,
             role="assistant",
             content=rag_result["answer"],
+            files_used=unique_file_ids,
         )
         try:
             self.db.add(assistant_msg)
@@ -221,10 +237,17 @@ class ChatService:
             "assistant_message": {
                 "id": str(assistant_msg.id),
                 "content": rag_result["answer"],
+                "files_used": assistant_msg.files_used or [],
                 "created_at": assistant_msg.created_at.isoformat(),
             },
             "rag_context": rag_result.get("context", []),
             "sources_used": rag_result.get("sources_used", []),
+            "intent": (
+                (rag_result.get("processing_metadata") or {}).get("intent")
+                if isinstance(rag_result.get("processing_metadata"), dict)
+                else None
+            ),
+            "processing_metadata": rag_result.get("processing_metadata", {}),
             "enhanced_pipeline": rag_result.get("enhanced_pipeline", False),
             "grounding_score": rag_result.get("grounding_score", 0.0),
             "chat_memories_used": len(chat_memories),
@@ -269,9 +292,9 @@ class ChatService:
         self.db.refresh(chat)
         return chat
     
-    def get_chat_with_messages(self, chat_id: str, user_id: str) -> Optional[Chat]:
+    def get_chat_with_messages(self, chat_id: str) -> Optional[Chat]:
         """Get chat with messages."""
-        chat = self.db.query(Chat).get(chat_id)
+        chat = self.db.query(Chat).options(joinedload(Chat.messages)).get(chat_id)
         return chat
     
     def index_chat_to_memory(self, chat_id: str) -> int:

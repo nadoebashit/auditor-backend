@@ -1,0 +1,135 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"><key id="d6" for="node" attr.name="truncate" attr.type="string"/>
+<key id="d5" for="node" attr.name="created_at" attr.type="long"/>
+<key id="d4" for="node" attr.name="file_path" attr.type="string"/>
+<key id="d3" for="node" attr.name="source_id" attr.type="string"/>
+<key id="d2" for="node" attr.name="description" attr.type="string"/>
+<key id="d1" for="node" attr.name="entity_type" attr.type="string"/>
+<key id="d0" for="node" attr.name="entity_id" attr.type="string"/>
+<graph edgedefault="undirected"><node id="Дополнительное Соглашение">
+  <data key="d0">Дополнительное Соглашение</data>
+  <data key="d1">content</data>
+  <data key="d2">An additional agreement to a contract dated "___" __________ 2025, detailing legal addresses, requisites of parties, and a list of analyses with costs and completion times.</data>
+  <data key="d3">chunk-e512b511af1b91f1a261450e61d12553</data>
+  <data key="d4">Эллада - Дополнительное соглашение к договору.docx</data>
+  <data key="d5">1767118657</data>
+  <data key="d6"></data>
+</node>
+<node id="Global Tech Index">
+  <data key="d0">Global Tech Index</data>
+  <data key="d1">concept</data>
+  <data key="d2">The Global Tech Index tracks the performance of major technology stocks and experienced a 3.4% decline today.&lt;SEP&gt;The Global Tech Index tracks the performance of major technology stocks and experienced a 3.4% decline today.</data>
+  <data key="d3">chunk-e512b511af1b91f1a261450e61d12553&lt;SEP&gt;chunk-68f6ab23a76984246fe5e04a4379c7e0&lt;SEP&gt;chunk-5be219473bcc54e2ab0880e5d5d5bdcf</data>
+  <data key="d4">Эллада - Дополнительное соглашение к договору.docx&lt;SEP&gt;Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118724</data>
+  <data key="d6"></data>
+</node>
+<node id="Gold Futures">
+  <data key="d0">Gold Futures</data>
+  <data key="d1">concept</data>
+  <data key="d2">Gold futures are a financial instrument that rose by 1.5%, indicating increased investor interest in safe-haven assets.&lt;SEP&gt;Gold futures rose by 1.5%, indicating increased investor interest in safe-haven assets.</data>
+  <data key="d3">chunk-e512b511af1b91f1a261450e61d12553&lt;SEP&gt;chunk-5be219473bcc54e2ab0880e5d5d5bdcf</data>
+  <data key="d4">Эллада - Дополнительное соглашение к договору.docx&lt;SEP&gt;Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118726</data>
+  <data key="d6"></data>
+</node>
+<node id="ТОО «Геном Плюс»">
+  <data key="d0">ТОО «Геном Плюс»</data>
+  <data key="d1">organization</data>
+  <data key="d2">ТОО «Геном Плюс» is an organization identified as the "Заказчик" (Customer) in the Act of Completed Works, represented by its General Director Абдирасилова Д.Д. It has a legal address in Astana and uses АО Kaspi Bank.</data>
+  <data key="d3">chunk-68f6ab23a76984246fe5e04a4379c7e0</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118722</data>
+  <data key="d6"></data>
+</node>
+<node id="ИП Аслан Дулатулы">
+  <data key="d0">ИП Аслан Дулатулы</data>
+  <data key="d1">organization</data>
+  <data key="d2">ИП Аслан Дулатулы is an individual entrepreneur identified as the "Исполнитель" (Performer) in the Act of Completed Works, represented by Дулатов Аслан. It has an address and uses АО Народный Банк Казахстана.</data>
+  <data key="d3">chunk-68f6ab23a76984246fe5e04a4379c7e0</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118722</data>
+  <data key="d6"></data>
+</node>
+<node id="Абдирасилова Д.Д.">
+  <data key="d0">Абдирасилова Д.Д.</data>
+  <data key="d1">person</data>
+  <data key="d2">Абдирасилова Д.Д. is the General Director of ТОО «Геном Плюс» and acts on the basis of the Charter.</data>
+  <data key="d3">chunk-68f6ab23a76984246fe5e04a4379c7e0</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118724</data>
+  <data key="d6"></data>
+</node>
+<node id="Market Selloff">
+  <data key="d0">Market Selloff</data>
+  <data key="d1">event</data>
+  <data key="d2">Market selloff refers to the significant decline in stock values due to investor concerns over interest rates and regulations.</data>
+  <data key="d3">chunk-68f6ab23a76984246fe5e04a4379c7e0</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118725</data>
+  <data key="d6"></data>
+</node>
+<node id="Удостоверение Личности № 046130878">
+  <data key="d0">Удостоверение Личности № 046130878</data>
+  <data key="d1">artifact</data>
+  <data key="d2">An identification document with the number 046130878.</data>
+  <data key="d3">chunk-5be219473bcc54e2ab0880e5d5d5bdcf</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118725</data>
+  <data key="d6"></data>
+</node>
+<node id="Срок Действия Удостоверения Личности">
+  <data key="d0">Срок Действия Удостоверения Личности</data>
+  <data key="d1">concept</data>
+  <data key="d2">The validity period for the identification</data>
+  <data key="d3">chunk-5be219473bcc54e2ab0880e5d5d5bdcf</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118726</data>
+  <data key="d6"></data>
+</node>
+<node id="Amirquram@gmail.com">
+  <data key="d0">Amirquram@gmail.com</data>
+  <data key="d1">data</data>
+  <data key="d2">An email address associated with Dulatov A. and IE Aslan Dulatuly.</data>
+  <data key="d3">chunk-49fe6f3ae8d19770edba03d4d11fb547</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118728</data>
+  <data key="d6"></data>
+</node>
+<node id="Dulatov A.">
+  <data key="d0">Dulatov A.</data>
+  <data key="d1">person</data>
+  <data key="d2">The head (Руководитель) of an Individual Entrepreneur (ИП).</data>
+  <data key="d3">chunk-49fe6f3ae8d19770edba03d4d11fb547</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118728</data>
+  <data key="d6"></data>
+</node>
+<node id="Stock Markets">
+  <data key="d0">Stock Markets</data>
+  <data key="d1">concept</data>
+  <data key="d2">Stock markets experienced a sharp downturn today.</data>
+  <data key="d3">chunk-49fe6f3ae8d19770edba03d4d11fb547</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118730</data>
+  <data key="d6"></data>
+</node>
+<node id="Tech Giants">
+  <data key="d0">Tech Giants</data>
+  <data key="d1">organization</data>
+  <data key="d2">Tech giants are companies that saw significant declines in the stock market.</data>
+  <data key="d3">chunk-49fe6f3ae8d19770edba03d4d11fb547</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118730</data>
+  <data key="d6"></data>
+</node>
+<node id="Analysts">
+  <data key="d0">Analysts</data>
+  <data key="d1">person</data>
+  <data key="d2">Analysts are experts who attribute the market selloff to</data>
+  <data key="d3">chunk-49fe6f3ae8d19770edba03d4d11fb547</data>
+  <data key="d4">Геном Плюс Сайт- Акт выполненных работ (1).docx</data>
+  <data key="d5">1767118733</data>
+  <data key="d6"></data>
+</node>
+</graph></graphml>

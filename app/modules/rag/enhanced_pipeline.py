@@ -16,6 +16,7 @@ Pipeline Layers:
 """
 
 import asyncio
+import threading
 import logging
 import os
 import time
@@ -26,8 +27,12 @@ import json
 import hashlib
 from datetime import datetime
 from pathlib import Path
+import uuid
+import re
 
 from sqlalchemy.orm import Session
+
+from qdrant_client.models import FieldCondition, Filter, MatchValue
 
 from app.modules.rag.gemini import GeminiAPI
 from app.modules.rag.policy_gate import PolicyGate, PolicyDecision
@@ -39,20 +44,38 @@ from app.modules.files.models import FileScope, FileChunk, StoredFile
 from app.modules.embeddings.service import EmbeddingService, get_embedding_service
 from app.core.logging import get_logger
 from app.core.config import settings
+from app.modules.rag.tools_block_c import (
+    calculate_materiality,
+    calculate_sample_size,
+    assess_legal_matter,
+)
 
 logger = get_logger(__name__)
 
 _LIGHTRAG_QUERY_TIMEOUT_S = float(os.getenv("LIGHTRAG_QUERY_TIMEOUT_S", "8") or "8")
+_LIGHTRAG_STRICT_ERRORS = (os.getenv("LIGHTRAG_STRICT_ERRORS", "false") or "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+}
+
+_GLOBAL_LIGHTRAG_CACHE: Dict[str, Any] = {}
+_GLOBAL_LIGHTRAG_CACHE_LOCK = threading.Lock()
 
 
 class IntentClass(Enum):
     """Intent classes for query routing."""
     CONTRACT_SIGNATORIES = "contract_signatories"
+    CONTRACT_STRUCTURE = "contract_structure"
     PLANNING_MATERIALITY = "planning_materiality"
     SAMPLING = "sampling"
     RISK_ASSESSMENT = "risk_assessment"
     CYCLE_DEEP_DIVE = "cycle_deep_dive"
     LEGAL_SUBSEQUENT_EVENTS = "legal_subsequent_events"
+    ACCEPTANCE_CONTINUANCE = "acceptance_continuance"
+    OPINION_FORMING = "opinion_forming"
+    GOING_CONCERN = "going_concern"
     KAM = "kam"
     TCWG_COMMUNICATIONS = "tcwg_communications"
     PBC_WAVES = "pbc_waves"
@@ -149,10 +172,14 @@ class EnhancedRAGPipeline:
         user_id: str,
         tenant_id: str,
         chat_context: Optional[List[Dict[str, Any]]] = None,
+        rolling_summary: Optional[str] = None,
+        chat_memories: Optional[List[Dict[str, Any]]] = None,
+        project_id: Optional[str] = None,
+        project_context: Optional[Dict[str, Any]] = None,
         include_admin_laws: bool = True,
         include_customer_docs: bool = True,
         mode: str = "hybrid",
-        top_k: int = 8,
+        top_k: int = 5,
         temperature: float = 0.3,
     ) -> Dict[str, Any]:
         """
@@ -203,7 +230,11 @@ class EnhancedRAGPipeline:
         # 2. Load Conversation State
         conversation_state = self._load_conversation_state(
             chat_context or [],
-            policy_result.max_context_tokens
+            policy_result.max_context_tokens,
+            rolling_summary=rolling_summary,
+            chat_memories=chat_memories,
+            project_id=project_id,
+            project_context=project_context,
         )
         
         logger.debug(
@@ -217,6 +248,12 @@ class EnhancedRAGPipeline:
         
         # 3. Query Router/Planner
         query_plan = self._route_and_plan(question, conversation_state)
+
+        tool_outputs = self._maybe_compute_block_c_tools(
+            question=question,
+            plan=query_plan,
+            project_context=project_context,
+        )
         
         logger.info(
             "RAG_PIPELINE: Query routed",
@@ -299,7 +336,7 @@ class EnhancedRAGPipeline:
         )
         
         # 7. Evidence Builder
-        evidence_pack = self._build_evidence_pack(ranked_evidence)
+        evidence_pack = self._build_evidence_pack(ranked_evidence, query_plan)
         
         # 8. Prompt Assembly
         final_prompt = self._assemble_prompt(
@@ -308,6 +345,7 @@ class EnhancedRAGPipeline:
             evidence_pack=evidence_pack,
             plan=query_plan,
             lightrag_hints=lightrag_hints,
+            tool_outputs=tool_outputs,
         )
         
         logger.debug(
@@ -338,6 +376,8 @@ class EnhancedRAGPipeline:
             response=raw_response,
             evidence_pack=evidence_pack,
         )
+
+        grounded_response_text = self._sanitize_answer_text(grounded_response.get("text", ""))
         
         # Calculate total pipeline time
         total_time = time.time() - pipeline_start
@@ -355,12 +395,17 @@ class EnhancedRAGPipeline:
         # 11. Memory Update (handled by caller)
         
         return {
-            "answer": grounded_response["text"],
+            "answer": grounded_response_text,
             "evidence_pack": evidence_pack,
             "query_plan": query_plan,
             "policy_result": policy_result,
+            "tool_outputs": tool_outputs,
             "conversation_used": len(conversation_state["last_turns"]) > 0,
-            "sources_used": [e["citation"] for e in evidence_pack["evidence"]],
+            "sources_used": list(dict.fromkeys([
+                str(e.get("file_id"))
+                for e in evidence_pack["evidence"]
+                if e.get("file_id")
+            ])),
             "grounding_score": grounded_response.get("score", 0.0),
             "processing_metadata": {
                 "intent": query_plan.intent.value,
@@ -375,20 +420,261 @@ class EnhancedRAGPipeline:
             }
         }
 
+    def _maybe_compute_block_c_tools(
+        self,
+        *,
+        question: str,
+        plan: QueryPlan,
+        project_context: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        q = (question or "").strip()
+        if not q:
+            return None
+
+        def _parse_bool_flag(patterns: list[str]) -> bool:
+            ql = q.lower()
+            return any(p in ql for p in patterns)
+
+        def _parse_risk() -> str | None:
+            ql = q.lower()
+            if any(x in ql for x in ["high risk", "высок", "high"]):
+                return "High"
+            if any(x in ql for x in ["low risk", "низк", "low"]):
+                return "Low"
+            if any(x in ql for x in ["moderate", "medium", "средн", "medium risk"]):
+                return "Moderate"
+            return None
+
+        def _parse_amount() -> float | None:
+            m = re.search(
+                r"(?P<num>\d+(?:[\.,]\d+)?)\s*(?P<suf>k|m|b|тыс|млн|млрд)?\b",
+                q,
+                flags=re.IGNORECASE,
+            )
+            if not m:
+                return None
+            raw = (m.group("num") or "").replace(",", ".")
+            try:
+                val = float(raw)
+            except Exception:
+                return None
+
+            suf = (m.group("suf") or "").lower()
+            if suf == "k" or suf == "тыс":
+                val *= 1_000
+            elif suf == "m" or suf == "млн":
+                val *= 1_000_000
+            elif suf == "b" or suf == "млрд":
+                val *= 1_000_000_000
+            return float(val)
+
+        def _parse_pm() -> float | None:
+            m = re.search(
+                r"\bPM\b\s*[:=]?\s*(?P<num>\d+(?:[\.,]\d+)?)\s*(?P<suf>k|m|b)?\b",
+                q,
+                flags=re.IGNORECASE,
+            )
+            if not m:
+                return None
+            raw = (m.group("num") or "").replace(",", ".")
+            try:
+                val = float(raw)
+            except Exception:
+                return None
+            suf = (m.group("suf") or "").lower()
+            if suf == "k":
+                val *= 1_000
+            elif suf == "m":
+                val *= 1_000_000
+            elif suf == "b":
+                val *= 1_000_000_000
+            return float(val)
+
+        def _pm_from_project_context() -> float | None:
+            if not project_context or not isinstance(project_context, dict):
+                return None
+            mat = project_context.get("materiality")
+            if not isinstance(mat, dict):
+                return None
+            for key in ["pm", "performance_materiality", "performanceMateriality"]:
+                v = mat.get(key)
+                if v is None:
+                    continue
+                try:
+                    return float(v)
+                except Exception:
+                    continue
+            return None
+
+        outputs: Dict[str, Any] = {"intent": plan.intent.value}
+
+        if plan.intent == IntentClass.PLANNING_MATERIALITY:
+            is_pie = _parse_bool_flag(["pie", "listed", "публич", "листинг"])
+            risk = _parse_risk() or "Moderate"
+
+            ql = q.lower()
+            benchmark = "Revenue"
+            if any(x in ql for x in ["pbt", "profit", "прибыл"]):
+                benchmark = "PBT"
+            elif any(x in ql for x in ["assets", "актив"]):
+                benchmark = "Assets"
+            elif any(x in ql for x in ["equity", "капитал"]):
+                benchmark = "Equity"
+
+            value = _parse_amount()
+            if value is None:
+                outputs["materiality"] = {
+                    "missing": ["benchmark_value"],
+                    "note": "Provide benchmark value (e.g., Revenue 100M) to compute OM/PM/CTT",
+                }
+                return outputs
+
+            try:
+                outputs["materiality"] = calculate_materiality(
+                    benchmark=benchmark,  # type: ignore[arg-type]
+                    benchmark_value=float(value),
+                    risk_level=risk,  # type: ignore[arg-type]
+                    is_pie=bool(is_pie),
+                )
+            except Exception as exc:
+                outputs["materiality"] = {"error": str(exc)}
+            return outputs
+
+        if plan.intent == IntentClass.SAMPLING:
+            pop = None
+            m_n = re.search(r"\bN\b\s*[:=]?\s*(\d{1,9})\b", q, flags=re.IGNORECASE)
+            if m_n:
+                try:
+                    pop = float(int(m_n.group(1)))
+                except Exception:
+                    pop = None
+            if pop is None:
+                pop = _parse_amount()
+
+            pm = _parse_pm() or _pm_from_project_context()
+            if pop is None or pm is None:
+                missing = []
+                if pop is None:
+                    missing.append("population")
+                if pm is None:
+                    missing.append("pm")
+                outputs["sampling"] = {
+                    "missing": missing,
+                    "note": "Provide population (N or TBV) and PM (e.g., PM 300K) to compute sample size",
+                }
+                return outputs
+
+            try:
+                outputs["sampling"] = calculate_sample_size(
+                    population=float(pop),
+                    pm=float(pm),
+                )
+            except Exception as exc:
+                outputs["sampling"] = {"error": str(exc)}
+            return outputs
+
+        if plan.intent == IntentClass.LEGAL_SUBSEQUENT_EVENTS:
+            pm = _parse_pm() or _pm_from_project_context()
+            amt = _parse_amount()
+
+            prob: str | None = None
+            ql = q.lower()
+            if any(x in ql for x in ["probable", "вероятн"]):
+                prob = "probable"
+            elif any(x in ql for x in ["possible", "возможн"]):
+                prob = "possible"
+            elif any(x in ql for x in ["remote", "маловероят", "невероят"]):
+                prob = "remote"
+
+            if amt is None or pm is None or prob is None:
+                missing = []
+                if amt is None:
+                    missing.append("claim_amount")
+                if pm is None:
+                    missing.append("pm")
+                if prob is None:
+                    missing.append("probability")
+                outputs["legal"] = {
+                    "missing": missing,
+                    "note": "Provide claim amount, probability (probable/possible/remote), and PM",
+                }
+                return outputs
+
+            outcome_estimable = not _parse_bool_flag(["not estimable", "cannot estimate", "не можем оценить"])
+
+            try:
+                outputs["legal"] = assess_legal_matter(
+                    claim_amount=float(amt),
+                    probability=prob,  # type: ignore[arg-type]
+                    pm=float(pm),
+                    outcome_estimable=bool(outcome_estimable),
+                )
+            except Exception as exc:
+                outputs["legal"] = {"error": str(exc)}
+            return outputs
+
+        return None
+
+    def _sanitize_answer_text(self, text: str) -> str:
+        if not text:
+            return ""
+
+        out = str(text)
+
+        out = re.sub(
+            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+            "",
+            out,
+        )
+        out = re.sub(r"\bchunk\s*=\s*\d+\b", "", out, flags=re.IGNORECASE)
+        out = re.sub(r"\(\s*chunks?\s+\d+\s+to\s+\d+\s*\)", "", out, flags=re.IGNORECASE)
+        out = re.sub(
+            r"\b\d{2,3}_[A-Za-z0-9_\-]+\.txt\b",
+            "",
+            out,
+        )
+        out = re.sub(r"\b\d{2,3}_[A-Za-z0-9_\-]+\b", "", out)
+        out = re.sub(
+            r"\bA\d{1,2}_[A-Za-z0-9_\-]+\.txt\b",
+            "",
+            out,
+        )
+        out = re.sub(r"\bA\d{1,2}_[A-Za-z0-9_\-]+\b", "", out)
+        out = re.sub(
+            r"\b[A-F]\d{1,2}_[A-Za-z0-9_\-]+\.txt\b",
+            "",
+            out,
+        )
+        out = re.sub(r"\b[A-F]\d{1,2}_[A-Za-z0-9_\-]+\b", "", out)
+        out = re.sub(r"\s+\]", "]", out)
+        out = re.sub(r"\[\s+", "[", out)
+        out = re.sub(r"\s{2,}", " ", out)
+        out = re.sub(r"\n{3,}", "\n\n", out)
+        return out.strip()
+
     def _get_lightrag(self, workspace: str):
         if workspace in self._lightrag_cache:
             return self._lightrag_cache[workspace]
+
+        # Process-wide cache: avoid re-initializing LightRAG on every request.
+        # This reduces timeouts and repeated storage loading.
+        with _GLOBAL_LIGHTRAG_CACHE_LOCK:
+            if workspace in _GLOBAL_LIGHTRAG_CACHE:
+                self._lightrag_cache[workspace] = _GLOBAL_LIGHTRAG_CACHE[workspace]
+                return self._lightrag_cache[workspace]
 
         try:
             base_dir = Path(settings.LIGHTRAG_WORKING_DIR)
             vdb_path = base_dir / workspace / "vdb_chunks.json"
             if not vdb_path.exists():
                 self._lightrag_cache[workspace] = None
+                _GLOBAL_LIGHTRAG_CACHE[workspace] = None
                 return None
             try:
                 raw = vdb_path.read_text(encoding="utf-8", errors="ignore").strip()
                 if not raw or raw == "[]" or raw == "{}":
                     self._lightrag_cache[workspace] = None
+                    _GLOBAL_LIGHTRAG_CACHE[workspace] = None
                     return None
             except Exception:
                 # If we can't read it, let LightRAG attempt to initialize.
@@ -402,10 +688,12 @@ class EnhancedRAGPipeline:
                 workspace=workspace,
             )
             self._lightrag_cache[workspace] = svc
+            _GLOBAL_LIGHTRAG_CACHE[workspace] = svc
             return svc
         except Exception as e:
             logger.warning("LightRAG init failed for workspace=%s: %s", workspace, e)
             self._lightrag_cache[workspace] = None
+            _GLOBAL_LIGHTRAG_CACHE[workspace] = None
             return None
 
     async def _second_signal_lightrag(
@@ -441,8 +729,30 @@ class EnhancedRAGPipeline:
                         ),
                         timeout=_LIGHTRAG_QUERY_TIMEOUT_S,
                     )
-                except Exception as e:
-                    logger.warning("LightRAG admin_law query failed: %s", e)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "LightRAG admin_law query timed out",
+                        extra={
+                            "timeout_s": float(_LIGHTRAG_QUERY_TIMEOUT_S),
+                            "mode": str(mode),
+                            "top_k": int(max(5, int(top_k / 2))),
+                            "intent": str(getattr(plan.intent, "value", plan.intent)),
+                        },
+                    )
+                    if _LIGHTRAG_STRICT_ERRORS:
+                        raise
+                except Exception:
+                    logger.warning(
+                        "LightRAG admin_law query failed",
+                        exc_info=True,
+                        extra={
+                            "mode": str(mode),
+                            "top_k": int(max(5, int(top_k / 2))),
+                            "intent": str(getattr(plan.intent, "value", plan.intent)),
+                        },
+                    )
+                    if _LIGHTRAG_STRICT_ERRORS:
+                        raise
 
         if settings.LIGHTRAG_ADMIN_ONLY:
             return merged
@@ -467,8 +777,30 @@ class EnhancedRAGPipeline:
                         ),
                         timeout=_LIGHTRAG_QUERY_TIMEOUT_S,
                     )
-                except Exception as e:
-                    logger.warning("LightRAG customer query failed: %s", e)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "LightRAG customer query timed out",
+                        extra={
+                            "timeout_s": float(_LIGHTRAG_QUERY_TIMEOUT_S),
+                            "mode": str(mode),
+                            "top_k": int(max(5, int(top_k / 2))),
+                            "intent": str(getattr(plan.intent, "value", plan.intent)),
+                        },
+                    )
+                    if _LIGHTRAG_STRICT_ERRORS:
+                        raise
+                except Exception:
+                    logger.warning(
+                        "LightRAG customer query failed",
+                        exc_info=True,
+                        extra={
+                            "mode": str(mode),
+                            "top_k": int(max(5, int(top_k / 2))),
+                            "intent": str(getattr(plan.intent, "value", plan.intent)),
+                        },
+                    )
+                    if _LIGHTRAG_STRICT_ERRORS:
+                        raise
 
         return merged
     
@@ -517,28 +849,142 @@ class EnhancedRAGPipeline:
         self,
         chat_context: List[Dict[str, Any]],
         max_tokens: int,
+        rolling_summary: Optional[str] = None,
+        chat_memories: Optional[List[Dict[str, Any]]] = None,
+        project_id: Optional[str] = None,
+        project_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Load conversation state with 3-layer memory.
         """
         # Layer 1: Rolling Summary (from chat context cache)
-        rolling_summary = ""
-        if chat_context and len(chat_context) > 8:
-            # TODO: Load from database or generate summary
-            rolling_summary = "Extended conversation about audit matters. Key topics discussed include..."
+        effective_summary = (rolling_summary or "").strip()
+        if not effective_summary:
+            effective_summary = ""
+            if chat_context and len(chat_context) > 8:
+                # TODO: Load from database or generate summary
+                effective_summary = "Extended conversation about audit matters. Key topics discussed include..."
         
         # Layer 2: Last Turns (2-4 messages)
         last_turns = chat_context[-4:] if len(chat_context) >= 4 else chat_context
         
-        # Layer 3: Chat Memory Retrieval (simulated - should use Qdrant)
-        chat_memories = []  # TODO: Implement Qdrant search for similar conversations
+        # Layer 3: Chat Memory Retrieval
+        effective_memories: List[Dict[str, Any]] = []
+        if chat_memories and isinstance(chat_memories, list):
+            effective_memories = [m for m in chat_memories if isinstance(m, dict)][:5]
         
         return {
-            "rolling_summary": rolling_summary,
+            "rolling_summary": effective_summary,
             "last_turns": last_turns,
-            "chat_memories": chat_memories,
-            "total_tokens": self._estimate_tokens(rolling_summary, last_turns, chat_memories),
+            "chat_memories": effective_memories,
+            "project_id": project_id,
+            "project_context": project_context,
+            "total_tokens": self._estimate_tokens(effective_summary, last_turns, effective_memories),
         }
+
+    def _project_context_for_prompt(
+        self,
+        project_context: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not project_context or not isinstance(project_context, dict):
+            return None
+
+        safe: Dict[str, Any] = {}
+
+        mat = project_context.get("materiality")
+        if isinstance(mat, dict):
+            allowed = [
+                "benchmark",
+                "benchmark_value",
+                "risk_level",
+                "om",
+                "pm",
+                "ct",
+                "rationale",
+            ]
+            safe_mat = {k: mat.get(k) for k in allowed if k in mat}
+            if safe_mat:
+                safe["materiality"] = safe_mat
+
+        risks = project_context.get("risks")
+        if isinstance(risks, list):
+            allowed = [
+                "cycle",
+                "assertion",
+                "risk_description",
+                "inherent_risk",
+                "control_risk",
+                "detection_risk",
+                "response",
+                "is_significant",
+                "is_fraud_risk",
+            ]
+            safe_risks = []
+            for r in risks[:10]:
+                if not isinstance(r, dict):
+                    continue
+                row = {k: r.get(k) for k in allowed if k in r}
+                if row:
+                    safe_risks.append(row)
+            if safe_risks:
+                safe["risks"] = safe_risks
+
+        legal = project_context.get("legal_matters")
+        if isinstance(legal, list):
+            allowed = [
+                "matter_name",
+                "claim_amount",
+                "probability",
+                "outcome_estimable",
+                "is_material",
+                "disclosure_required",
+                "provision_required",
+                "is_kam",
+                "rationale",
+            ]
+            safe_legal = []
+            for lm in legal[:10]:
+                if not isinstance(lm, dict):
+                    continue
+                row = {k: lm.get(k) for k in allowed if k in lm}
+                if row:
+                    safe_legal.append(row)
+            if safe_legal:
+                safe["legal_matters"] = safe_legal
+
+        pbc = project_context.get("pbc")
+        if isinstance(pbc, dict):
+            safe_pbc: Dict[str, Any] = {}
+            stats = pbc.get("stats")
+            if isinstance(stats, dict):
+                safe_pbc["stats"] = stats
+
+            items = pbc.get("items")
+            if isinstance(items, list):
+                allowed = [
+                    "item_code",
+                    "item_name",
+                    "cycle",
+                    "priority",
+                    "status",
+                    "due_date",
+                    "received_date",
+                    "notes",
+                ]
+                safe_items = []
+                for it in items[:15]:
+                    if not isinstance(it, dict):
+                        continue
+                    row = {k: it.get(k) for k in allowed if k in it}
+                    if row:
+                        safe_items.append(row)
+                if safe_items:
+                    safe_pbc["items"] = safe_items
+
+            if safe_pbc:
+                safe["pbc"] = safe_pbc
+
+        return safe or None
     
     def _route_and_plan(self, question: str, conversation_state: Dict[str, Any]) -> QueryPlan:
         """
@@ -561,21 +1007,40 @@ class EnhancedRAGPipeline:
         if any(
             word in question_lower
             for word in [
+                "пункт",
+                "пункты",
+                "раздел",
+                "приложени",
+                "содержание",
+                "структур",
+                "перечень",
+            ]
+        ) and any(word in question_lower for word in ["договор", "контракт", "соглашение"]):
+            intent = IntentClass.CONTRACT_STRUCTURE
+            required_evidence = "must_cite"
+            admin_budget = 0
+            customer_budget = 12
+            patterns = ["contract_outline", "sections", "clauses"]
+
+        # Contract signatories / parties (strict cue set; do not trigger on generic contract-structure questions)
+        if intent != IntentClass.CONTRACT_STRUCTURE and any(
+            word in question_lower
+            for word in [
                 "руководител",
                 "генеральн",
                 "директор",
                 "подпис",
                 "в лице",
-                "заказчик",
-                "исполнитель",
-                "договор",
+                "представител",
+                "уполномоч",
+                "основани",
             ]
-        ):
+        ) and any(word in question_lower for word in ["договор", "контракт", "соглашение", "заказчик", "исполнитель"]):
             intent = IntentClass.CONTRACT_SIGNATORIES
             required_evidence = "must_cite"
-            admin_budget = 2
-            customer_budget = 8
-            patterns = ["signatories", "names", "roles"]
+            admin_budget = max(admin_budget, 1)
+            customer_budget = max(customer_budget, 8)
+            patterns = patterns + ["signatories", "names", "roles"]
 
         if any(
             word in question_lower
@@ -639,6 +1104,33 @@ class EnhancedRAGPipeline:
             standards = ["ISA 530"]
             patterns = ["population_sizes", "sample_methods"]
         
+        # Going concern
+        elif any(word in question_lower for word in ["going concern", "непрерывност", "isa 570", "gc"]):
+            intent = IntentClass.GOING_CONCERN
+            required_evidence = "must_cite"
+            admin_budget = 6
+            customer_budget = 4
+            standards = ["ISA 570"]
+            patterns = ["going_concern_indicators", "cash_flow", "covenants"]
+
+        # Opinion forming
+        elif any(word in question_lower for word in ["opinion", "мнение", "isa 700", "isa 705", "isa 706", "qualified", "adverse", "disclaimer"]):
+            intent = IntentClass.OPINION_FORMING
+            required_evidence = "must_cite"
+            admin_budget = 6
+            customer_budget = 2
+            standards = ["ISA 700", "ISA 705", "ISA 706"]
+            patterns = ["opinion_inputs", "misstatements", "scope_limitation", "eom"]
+
+        # Acceptance & continuance
+        elif any(word in question_lower for word in ["acceptance", "continuance", "isqm", "isa 220", "isa 210", "independence", "принятие", "продолжение"]):
+            intent = IntentClass.ACCEPTANCE_CONTINUANCE
+            required_evidence = "must_cite"
+            admin_budget = 4
+            customer_budget = 0
+            standards = ["ISQM 1", "ISA 220", "ISA 210"]
+            patterns = ["independence_threats", "integrity", "competence", "preconditions"]
+
         # PBC requests
         elif any(word in question_lower for word in ["pbc", "запрос", "документы", "provide"]):
             intent = IntentClass.PBC_WAVES
@@ -708,20 +1200,60 @@ class EnhancedRAGPipeline:
             "customer_docs": [],
             "chat_memory": [],
         }
-        
+
         retrieval_top_k = int(getattr(settings, "RAG_RETRIEVAL_TOP_K", 30) or 30)
         min_similarity = float(getattr(settings, "RAG_MIN_SIMILARITY", 0.65) or 0.65)
+        if plan.intent == IntentClass.CONTRACT_STRUCTURE:
+            # For outline/structure questions recall is more important than precision.
+            retrieval_top_k = max(retrieval_top_k, 60)
+            min_similarity = min(min_similarity, 0.55)
+
+        kb_file_ids: list[str] | None = None
+        if plan.intent == IntentClass.PLANNING_MATERIALITY:
+            retrieval_top_k = min(retrieval_top_k, 20)
+            min_similarity = max(min_similarity, 0.70)
+            kb_file_ids = ["C1"]
+        elif plan.intent == IntentClass.SAMPLING:
+            retrieval_top_k = min(retrieval_top_k, 20)
+            min_similarity = max(min_similarity, 0.70)
+            kb_file_ids = ["C2", "C4"]
+        elif plan.intent == IntentClass.LEGAL_SUBSEQUENT_EVENTS:
+            retrieval_top_k = min(retrieval_top_k, 15)
+            min_similarity = max(min_similarity, 0.75)
+            kb_file_ids = ["D1", "B8"]
+        elif plan.intent == IntentClass.ACCEPTANCE_CONTINUANCE:
+            retrieval_top_k = min(retrieval_top_k, 15)
+            min_similarity = max(min_similarity, 0.75)
+            kb_file_ids = ["D2"]
+        elif plan.intent == IntentClass.OPINION_FORMING:
+            retrieval_top_k = min(retrieval_top_k, 15)
+            min_similarity = max(min_similarity, 0.75)
+            kb_file_ids = ["D3", "C5", "D4", "B6"]
+        elif plan.intent == IntentClass.GOING_CONCERN:
+            retrieval_top_k = min(retrieval_top_k, 15)
+            min_similarity = max(min_similarity, 0.75)
+            kb_file_ids = ["D4", "B6"]
 
         query_vector = self._create_query_embedding(question)
         
         # 1. ADMIN_LAW retrieval from G1 namespace (oson_knowledge)
         if FileScope.ADMIN_LAW.value in policy_result.allowed_scopes:
-            # Dense retrieval from admin Qdrant namespace (G1)
             admin_filter = self.qdrant_store_admin.build_filter(
                 scope=FileScope.ADMIN_LAW.value,
                 customer_id=None,
                 owner_id=None,
             )
+
+            if kb_file_ids:
+                if len(kb_file_ids) == 1:
+                    extra = [FieldCondition(key="kb_file_id", match=MatchValue(value=kb_file_ids[0]))]
+                    admin_filter = Filter(must=list((admin_filter.must if admin_filter and admin_filter.must else [])) + extra)
+                else:
+                    should = [FieldCondition(key="kb_file_id", match=MatchValue(value=x)) for x in kb_file_ids]
+                    admin_filter = Filter(
+                        must=list((admin_filter.must if admin_filter and admin_filter.must else [])),
+                        should=should,
+                    )
             
             try:
                 admin_points = []
@@ -749,6 +1281,17 @@ class EnhancedRAGPipeline:
                     except Exception:
                         continue
 
+                try:
+                    raw_admin_count = len(admin_points)
+                    top_admin_score = (
+                        max(float(getattr(p, "score", 0.0) or 0.0) for p in admin_points)
+                        if admin_points
+                        else None
+                    )
+                except Exception:
+                    raw_admin_count = 0
+                    top_admin_score = None
+
                 # Merge by (file_id, chunk_index) keeping best score
                 merged_points: Dict[tuple[Any, Any], Any] = {}
                 for point in admin_points:
@@ -763,13 +1306,20 @@ class EnhancedRAGPipeline:
                         merged_points[key] = point
 
                 admin_points = sorted(merged_points.values(), key=lambda p: float(p.score or 0.0), reverse=True)[:retrieval_top_k]
+
+                logger.info(
+                    "RAG_PIPELINE: ADMIN_LAW dense retrieval stats",
+                    extra={
+                        "raw_count": int(raw_admin_count or 0),
+                        "after_min_similarity": int(len(admin_points)),
+                        "min_similarity": float(min_similarity),
+                        "top_score": float(top_admin_score) if top_admin_score is not None else None,
+                    },
+                )
                 
                 for point in admin_points:
                     payload = point.payload or {}
-                    chunk_text_value, filename = self._hydrate_chunk(
-                        file_id=payload.get("file_id"),
-                        chunk_index=payload.get("chunk_index"),
-                    )
+                    chunk_text_value, filename = self._hydrate_chunk_from_payload(payload)
                     results["admin_law"].append({
                         "source": "qdrant_admin",
                         "score": point.score,
@@ -780,13 +1330,14 @@ class EnhancedRAGPipeline:
                         "customer_id": payload.get("customer_id"),
                         "owner_id": payload.get("owner_id"),
                         "text": chunk_text_value,
-                        "citation": f"scope=ADMIN_LAW source={payload.get('file_id')} chunk={payload.get('chunk_index')}",
+                        "citation": "",
                         "trust_level": "official",
                         # Extended payload fields per TZ
                         "block": payload.get("block"),
                         "section": payload.get("section"),
                         "section_level": payload.get("section_level"),
                         "isa_reference": payload.get("isa_reference", []),
+                        "ifrs_reference": payload.get("ifrs_reference", []),
                         "cycle": payload.get("cycle"),
                     })
             except Exception as e:
@@ -803,15 +1354,46 @@ class EnhancedRAGPipeline:
                     owner_id=None,
                 )
 
+                ql = (question or "").lower()
+                boost_sparse = any(
+                    k in ql
+                    for k in [
+                        "цена",
+                        "цены",
+                        "стоимость",
+                        "прейскурант",
+                        "тариф",
+                        "price",
+                        "pricing",
+                        "пункт",
+                        "пункты",
+                        "раздел",
+                        "приложени",
+                        "содержание",
+                        "перечень",
+                    ]
+                ) or plan.intent == IntentClass.CONTRACT_STRUCTURE
+
                 try:
-                    customer_points = self.qdrant_store_client.search(
+                    customer_points_raw = self.qdrant_store_client.search(
                         query_vector=query_vector,
                         limit=retrieval_top_k,
                         filter_=customer_filter,
                     )
 
+                    try:
+                        raw_customer_count = len(customer_points_raw)
+                        top_customer_score = (
+                            max(float(getattr(p, "score", 0.0) or 0.0) for p in customer_points_raw)
+                            if customer_points_raw
+                            else None
+                        )
+                    except Exception:
+                        raw_customer_count = 0
+                        top_customer_score = None
+
                     merged_points: Dict[tuple[Any, Any], Any] = {}
-                    for point in customer_points:
+                    for point in customer_points_raw:
                         if point is None:
                             continue
                         if float(getattr(point, "score", 0.0) or 0.0) < min_similarity:
@@ -824,12 +1406,72 @@ class EnhancedRAGPipeline:
 
                     customer_points = sorted(merged_points.values(), key=lambda p: float(p.score or 0.0), reverse=True)[:retrieval_top_k]
 
+                    if not customer_points and customer_points_raw:
+                        customer_points = sorted(
+                            [p for p in customer_points_raw if p is not None],
+                            key=lambda p: float(getattr(p, "score", 0.0) or 0.0),
+                            reverse=True,
+                        )[: max(5, min(15, retrieval_top_k))]
+
+                    used_sparse = False
+                    if self.db is not None and (not customer_points or boost_sparse):
+                        try:
+                            sparse = self.hybrid_search.fts_search.search(
+                                query=question,
+                                scope=FileScope.CUSTOMER_DOC.value,
+                                customer_id=customer_id,
+                                owner_id=None,
+                                limit=retrieval_top_k,
+                            )
+                        except Exception:
+                            sparse = []
+
+                        if sparse:
+                            used_sparse = True
+                            present = {(e.get("file_id"), e.get("chunk_index")) for e in results["customer_docs"] if isinstance(e, dict)}
+                            for i, r in enumerate(sparse[: min(10, retrieval_top_k)]):
+                                key = (r.file_id, r.chunk_index)
+                                if key in present:
+                                    continue
+                                present.add(key)
+
+                                hydrated_text, hydrated_filename = self._hydrate_chunk(r.file_id, r.chunk_index)
+                                final_text = (hydrated_text or "").strip() or (r.text or "")
+                                final_filename = hydrated_filename or r.filename
+                                results["customer_docs"].append({
+                                    "source": "fts_customer",
+                                    "score": float(min_similarity) + (0.01 * max(0, (retrieval_top_k - i))),
+                                    "file_id": r.file_id,
+                                    "chunk_index": r.chunk_index,
+                                    "filename": final_filename,
+                                    "scope": r.scope,
+                                    "customer_id": r.customer_id,
+                                    "owner_id": r.owner_id,
+                                    "text": final_text,
+                                    "citation": f"scope=CUSTOMER_DOC source={r.file_id} chunk={r.chunk_index}",
+                                    "trust_level": "client_provided",
+                                    "block": None,
+                                    "section": None,
+                                    "section_level": None,
+                                    "isa_reference": [],
+                                    "cycle": None,
+                                })
+
+                    logger.info(
+                        "RAG_PIPELINE: CUSTOMER_DOC dense retrieval stats",
+                        extra={
+                            "raw_count": int(raw_customer_count or 0),
+                            "after_min_similarity": int(len(merged_points)),
+                            "final_dense_count": int(len(customer_points)),
+                            "min_similarity": float(min_similarity),
+                            "top_score": float(top_customer_score) if top_customer_score is not None else None,
+                            "used_sparse_fallback": bool(used_sparse),
+                        },
+                    )
+
                     for point in customer_points:
                         payload = point.payload or {}
-                        chunk_text_value, filename = self._hydrate_chunk(
-                            file_id=payload.get("file_id"),
-                            chunk_index=payload.get("chunk_index"),
-                        )
+                        chunk_text_value, filename = self._hydrate_chunk_from_payload(payload)
                         results["customer_docs"].append({
                             "source": "qdrant_customer",
                             "score": point.score,
@@ -847,6 +1489,7 @@ class EnhancedRAGPipeline:
                             "section": payload.get("section"),
                             "section_level": payload.get("section_level"),
                             "isa_reference": payload.get("isa_reference", []),
+                            "ifrs_reference": payload.get("ifrs_reference", []),
                             "cycle": payload.get("cycle"),
                         })
                 except Exception as e:
@@ -858,6 +1501,50 @@ class EnhancedRAGPipeline:
         
         return results
 
+    def _hydrate_chunk_from_payload(self, payload: Any) -> tuple[str, Optional[str]]:
+        if not isinstance(payload, dict):
+            return "", None
+
+        fallback_text = str(payload.get("text") or "")
+        fallback_filename = payload.get("stored_file_original_filename") or payload.get("filename")
+        chunk_index = payload.get("chunk_index")
+        stored_file_id = payload.get("stored_file_id")
+
+        if self.db is None:
+            return fallback_text, fallback_filename
+
+        if chunk_index is None:
+            return fallback_text, fallback_filename
+
+        db_file_id = stored_file_id or payload.get("file_id")
+        if not db_file_id:
+            return fallback_text, fallback_filename
+
+        try:
+            db_file_uuid = uuid.UUID(str(db_file_id))
+            db_chunk_index = int(chunk_index)
+        except Exception:
+            return fallback_text, fallback_filename
+
+        try:
+            db_chunk = (
+                self.db.query(FileChunk)
+                .filter(
+                    FileChunk.file_id == db_file_uuid,
+                    FileChunk.chunk_index == db_chunk_index,
+                )
+                .first()
+            )
+            text = db_chunk.text if db_chunk is not None else fallback_text
+            stored_file = self.db.query(StoredFile).get(db_file_uuid)
+            filename = (
+                (stored_file.original_filename if stored_file is not None else None)
+                or fallback_filename
+            )
+            return text, filename
+        except Exception:
+            return fallback_text, fallback_filename
+
     def _hydrate_chunk(self, file_id: Any, chunk_index: Any) -> tuple[str, Optional[str]]:
         if not file_id and file_id != 0:
             return "", None
@@ -867,16 +1554,21 @@ class EnhancedRAGPipeline:
             return "", None
 
         try:
+            db_file_id = file_id
+            if isinstance(file_id, str):
+                db_file_id = uuid.UUID(file_id)
+            db_chunk_index = int(chunk_index)
+
             db_chunk = (
                 self.db.query(FileChunk)
                 .filter(
-                    FileChunk.file_id == file_id,
-                    FileChunk.chunk_index == chunk_index,
+                    FileChunk.file_id == db_file_id,
+                    FileChunk.chunk_index == db_chunk_index,
                 )
                 .first()
             )
             text = db_chunk.text if db_chunk is not None else ""
-            stored_file = self.db.query(StoredFile).get(file_id)
+            stored_file = self.db.query(StoredFile).get(db_file_id)
             filename = stored_file.original_filename if stored_file is not None else None
             return text, filename
         except Exception:
@@ -948,6 +1640,8 @@ class EnhancedRAGPipeline:
         retrieval_top_k = int(getattr(settings, "RAG_RETRIEVAL_TOP_K", 30) or 30)
         candidates = evidence[:retrieval_top_k]
         top_k = int(getattr(settings, "MIXEDBREAD_RERANK_TOP_K", 5) or 5)
+        if plan.intent == IntentClass.CONTRACT_STRUCTURE:
+            top_k = max(top_k, 15)
 
         if not settings.MIXEDBREAD_API_KEY:
             # If not configured, keep deterministic fallback (no external calls).
@@ -976,7 +1670,7 @@ class EnhancedRAGPipeline:
             logger.warning("Mixedbread rerank failed; falling back: %s", e)
             return candidates[: min(top_k, len(candidates))]
     
-    def _build_evidence_pack(self, ranked_evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _build_evidence_pack(self, ranked_evidence: List[Dict[str, Any]], plan: QueryPlan) -> Dict[str, Any]:
         """
         Build evidence pack with neighbors and citations.
         """
@@ -990,11 +1684,10 @@ class EnhancedRAGPipeline:
         }
         
         top_k = int(getattr(settings, "MIXEDBREAD_RERANK_TOP_K", 5) or 5)
+        if plan.intent == IntentClass.CONTRACT_STRUCTURE:
+            top_k = max(top_k, 15)
         for i, ev in enumerate(ranked_evidence[:top_k]):
-            # Add neighbors (simulate by including adjacent chunks)
-            neighbors_text = ""
-            if ev.get("chunk_index"):
-                neighbors_text = f" (chunks {ev.get('chunk_index', 0)-1} to {ev.get('chunk_index', 0)+1})"
+            citation_label = f"[{i + 1}]"
             
             evidence_item = {
                 "rank": i + 1,
@@ -1002,8 +1695,8 @@ class EnhancedRAGPipeline:
                 "source_type": ev.get("source_type", "unknown"),
                 "trust_level": ev.get("trust_level", "unknown"),
                 "score": ev.get("score", 0.0),
-                "citation": ev.get("citation", "unknown"),
-                "text": ev.get("text", "") + neighbors_text,
+                "citation": citation_label,
+                "text": ev.get("text", ""),
                 "file_id": ev.get("file_id"),
                 "chunk_index": ev.get("chunk_index"),
             }
@@ -1020,6 +1713,44 @@ class EnhancedRAGPipeline:
                 evidence_pack["metadata"]["source_distribution"].get(source_type, 0) + 1
         
         return evidence_pack
+
+    def _evidence_snippet(self, text: str, question: str, *, max_len: int = 1200) -> str:
+        t = (text or "").strip()
+        if not t:
+            return ""
+
+        q = (question or "").lower()
+        tl = t.lower()
+
+        try:
+            terms = re.findall(r"[\w\u0400-\u04FF]{4,}", q)
+        except Exception:
+            terms = []
+
+        seen: set[str] = set()
+        keywords: list[str] = []
+        for term in terms:
+            if term in seen:
+                continue
+            seen.add(term)
+            keywords.append(term)
+            if len(keywords) >= 12:
+                break
+
+        hit = -1
+        for kw in keywords:
+            idx = tl.find(kw)
+            if idx >= 0:
+                hit = idx
+                break
+
+        if hit < 0:
+            return t[:max_len]
+
+        start = max(0, hit - 200)
+        end = min(len(t), start + max_len)
+        snippet = t[start:end]
+        return ("…" if start > 0 else "") + snippet + ("…" if end < len(t) else "")
     
     def _assemble_prompt(
         self,
@@ -1028,6 +1759,7 @@ class EnhancedRAGPipeline:
         evidence_pack: Dict[str, Any],
         plan: QueryPlan,
         lightrag_hints: Optional[Dict[str, Any]] = None,
+        tool_outputs: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Assemble final prompt with dynamic prompts from database.
@@ -1058,7 +1790,40 @@ class EnhancedRAGPipeline:
 - If evidence is insufficient, state this explicitly
 - Maintain professional auditor tone
 - Cite sources for all factual statements
+- Never mention internal identifiers (UUIDs, file_id, chunk_index) in the answer
+- Never mention internal prompt/document names (e.g., A2_ISA_RoutingPrompts_v1.txt)
+- Never claim that you saved/updated any project register. If a save/update is needed, instruct the user to click the action button (handled server-side).
 """)
+
+        prompt_parts.append("\n=== OUTPUT FORMAT RULES ===")
+        prompt_parts.append("""
+- Output must be clean, copy-paste safe Markdown.
+- Use short headings and blank lines. Do not write one long paragraph.
+- Prefer tables to prose. If you output a table, use a pipe table.
+- Do NOT output a 'Cross-References' section unless you have at least ONE concrete reference.
+  - Allowed cross-references: ISA/IAS/IFRS standard names (e.g., ISA 315) and document locations (e.g., 'Раздел 8', 'Приложение №1').
+  - Do NOT reference internal kit filenames or prompt names.
+- Avoid boilerplate and avoid broken placeholders like '(см. )'. If you cannot cite something, omit it.
+
+Contract structure questions (when user asks list of sections/clauses/appendices):
+- Provide a short 'Итог' line.
+- Provide ONE table with the schema:
+  Раздел/Приложение | Пункты/подпункты (диапазон) | Краткое содержание | Где упомянуто
+- If evidence does not contain all sections, add 'Пробелы' and list what is missing and what to upload.
+- Add 'Acceptance tests' (pass/fail criteria) below the table.
+
+Contract signatories questions (when user asks who signed / who is general director / 'в лице'):
+- Provide a short 'Итог' line.
+- Provide ONE table with the schema:
+  Сторона | Юрлицо | Должность в договоре | ФИО (как указано в тексте) | Основание полномочий | Где упомянуто
+- Add 'Примечание' if the name is only initials.
+- Add 'Acceptance tests' (pass/fail criteria) below the table.
+- Add 'Следующие действия' (2-4 bullets).
+""")
+
+        if tool_outputs:
+            prompt_parts.append("\n=== TOOL OUTPUT (DETERMINISTIC) ===")
+            prompt_parts.append(json.dumps(tool_outputs, ensure_ascii=False, indent=2))
         
         # 3. Rolling Summary (if available)
         if conversation_state["rolling_summary"]:
@@ -1077,14 +1842,30 @@ class EnhancedRAGPipeline:
             prompt_parts.append("\n=== RELATED CONVERSATIONS ===")
             for memory in conversation_state["chat_memories"][:3]:
                 prompt_parts.append(f"- {memory.get('summary', 'Related topic')}")
+
+        # 5.5 Project Context (structured; no UUIDs)
+        safe_project_context = self._project_context_for_prompt(
+            conversation_state.get("project_context")
+            if isinstance(conversation_state, dict)
+            else None
+        )
+        if safe_project_context:
+            prompt_parts.append("\n=== PROJECT CONTEXT (STRUCTURED) ===")
+            prompt_parts.append(
+                json.dumps(safe_project_context, ensure_ascii=False, indent=2)
+            )
         
         # 6. Evidence Pack
         prompt_parts.append("\n=== EVIDENCE ===")
         prompt_parts.append(f"Found {len(evidence_pack['evidence'])} relevant pieces of evidence:")
         
-        for i, ev in enumerate(evidence_pack["evidence"][:10]):  # Top 10 for prompt
+        max_ev_for_prompt = 10
+        if plan.intent == IntentClass.CONTRACT_STRUCTURE:
+            max_ev_for_prompt = 20
+
+        for i, ev in enumerate(evidence_pack["evidence"][:max_ev_for_prompt]):
             prompt_parts.append(f"\n{i+1}. [{ev['trust_level'].upper()}] {ev['citation']}")
-            prompt_parts.append(f"   {ev['text'][:300]}...")
+            prompt_parts.append(f"   {self._evidence_snippet(ev.get('text', ''), question)}")
 
         # 6.5. Second signal (LightRAG hints)
         if lightrag_hints:
@@ -1199,6 +1980,8 @@ Provide a professional auditor response following these guidelines:
         policy_result: "PolicyGateResult",
         include_admin_laws: bool,
     ) -> Optional[Dict[str, Any]]:
+        if plan.admin_law_budget <= 0:
+            return None
         if (
             not include_admin_laws
             or FileScope.ADMIN_LAW.value not in (policy_result.allowed_scopes or [])
@@ -1221,11 +2004,35 @@ Provide a professional auditor response following these guidelines:
                     question=question,
                     mode=mode,
                     top_k=max(5, int(top_k / 2)),
+                    enable_rerank=False,
                 ),
                 timeout=_LIGHTRAG_QUERY_TIMEOUT_S,
             )
-        except Exception as e:
-            logger.warning("LightRAG admin_law query failed: %s", e)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "LightRAG admin_law query timed out",
+                extra={
+                    "timeout_s": float(_LIGHTRAG_QUERY_TIMEOUT_S),
+                    "mode": str(mode),
+                    "top_k": int(max(5, int(top_k / 2))),
+                    "intent": str(getattr(plan.intent, "value", plan.intent)),
+                },
+            )
+            if _LIGHTRAG_STRICT_ERRORS:
+                raise
+            return None
+        except Exception:
+            logger.warning(
+                "LightRAG admin_law query failed",
+                exc_info=True,
+                extra={
+                    "mode": str(mode),
+                    "top_k": int(max(5, int(top_k / 2))),
+                    "intent": str(getattr(plan.intent, "value", plan.intent)),
+                },
+            )
+            if _LIGHTRAG_STRICT_ERRORS:
+                raise
             return None
 
     def _build_lightrag_query_expansions(

@@ -16,9 +16,7 @@ class RAGQueryRequest(BaseModel):
         default="hybrid",
         description="Режим запроса: naive, local, global, hybrid (LightRAG) / hybrid retrieval (Qdrant+LightRAG)",
     )
-    top_k: int = Field(
-        default=8, ge=1, le=30, description="Количество результатов (top-k)"
-    )
+    top_k: int = Field(default=8, ge=1, le=30, description="Количество результатов (top-k)")
     context_limit: Optional[int] = Field(
         None, description="Лимит контекста (символы/байты, если поддерживается)"
     )
@@ -28,9 +26,6 @@ class RAGQueryRequest(BaseModel):
         le=1.0,
         description="Температура генерации ответа LLM",
     )
-    top_k: int = Field(default=5, ge=1, le=20, description="Количество результатов")
-    context_limit: Optional[int] = Field(None, description="Лимит контекста")
-    temperature: float = Field(default=0.3, ge=0.0, le=2.0, description="Temperature для генерации")
 
 
 class RAGQueryResponse(BaseModel):

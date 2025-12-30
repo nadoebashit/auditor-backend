@@ -1,0 +1,129 @@
+{
+  "Дополнительное Соглашение": {
+    "chunk_ids": [
+      "chunk-e512b511af1b91f1a261450e61d12553"
+    ],
+    "count": 1,
+    "create_time": 1767118657,
+    "update_time": 1767118657,
+    "_id": "Дополнительное Соглашение"
+  },
+  "Global Tech Index": {
+    "chunk_ids": [
+      "chunk-e512b511af1b91f1a261450e61d12553",
+      "chunk-68f6ab23a76984246fe5e04a4379c7e0",
+      "chunk-5be219473bcc54e2ab0880e5d5d5bdcf"
+    ],
+    "count": 3,
+    "update_time": 1767118724,
+    "_id": "Global Tech Index"
+  },
+  "Gold Futures": {
+    "chunk_ids": [
+      "chunk-e512b511af1b91f1a261450e61d12553",
+      "chunk-5be219473bcc54e2ab0880e5d5d5bdcf"
+    ],
+    "count": 2,
+    "update_time": 1767118726,
+    "_id": "Gold Futures"
+  },
+  "ТОО «Геном Плюс»": {
+    "chunk_ids": [
+      "chunk-68f6ab23a76984246fe5e04a4379c7e0"
+    ],
+    "count": 1,
+    "create_time": 1767118722,
+    "update_time": 1767118722,
+    "_id": "ТОО «Геном Плюс»"
+  },
+  "ИП Аслан Дулатулы": {
+    "chunk_ids": [
+      "chunk-68f6ab23a76984246fe5e04a4379c7e0"
+    ],
+    "count": 1,
+    "create_time": 1767118722,
+    "update_time": 1767118722,
+    "_id": "ИП Аслан Дулатулы"
+  },
+  "Абдирасилова Д.Д.": {
+    "chunk_ids": [
+      "chunk-68f6ab23a76984246fe5e04a4379c7e0"
+    ],
+    "count": 1,
+    "create_time": 1767118724,
+    "update_time": 1767118724,
+    "_id": "Абдирасилова Д.Д."
+  },
+  "Market Selloff": {
+    "chunk_ids": [
+      "chunk-68f6ab23a76984246fe5e04a4379c7e0"
+    ],
+    "count": 1,
+    "create_time": 1767118725,
+    "update_time": 1767118725,
+    "_id": "Market Selloff"
+  },
+  "Удостоверение Личности № 046130878": {
+    "chunk_ids": [
+      "chunk-5be219473bcc54e2ab0880e5d5d5bdcf"
+    ],
+    "count": 1,
+    "create_time": 1767118725,
+    "update_time": 1767118725,
+    "_id": "Удостоверение Личности № 046130878"
+  },
+  "Срок Действия Удостоверения Личности": {
+    "chunk_ids": [
+      "chunk-5be219473bcc54e2ab0880e5d5d5bdcf"
+    ],
+    "count": 1,
+    "create_time": 1767118726,
+    "update_time": 1767118726,
+    "_id": "Срок Действия Удостоверения Личности"
+  },
+  "Amirquram@gmail.com": {
+    "chunk_ids": [
+      "chunk-49fe6f3ae8d19770edba03d4d11fb547"
+    ],
+    "count": 1,
+    "create_time": 1767118728,
+    "update_time": 1767118728,
+    "_id": "Amirquram@gmail.com"
+  },
+  "Dulatov A.": {
+    "chunk_ids": [
+      "chunk-49fe6f3ae8d19770edba03d4d11fb547"
+    ],
+    "count": 1,
+    "create_time": 1767118728,
+    "update_time": 1767118728,
+    "_id": "Dulatov A."
+  },
+  "Stock Markets": {
+    "chunk_ids": [
+      "chunk-49fe6f3ae8d19770edba03d4d11fb547"
+    ],
+    "count": 1,
+    "create_time": 1767118730,
+    "update_time": 1767118730,
+    "_id": "Stock Markets"
+  },
+  "Tech Giants": {
+    "chunk_ids": [
+      "chunk-49fe6f3ae8d19770edba03d4d11fb547"
+    ],
+    "count": 1,
+    "create_time": 1767118730,
+    "update_time": 1767118730,
+    "_id": "Tech Giants"
+  },
+  "Analysts": {
+    "chunk_ids": [
+      "chunk-49fe6f3ae8d19770edba03d4d11fb547"
+    ],
+    "count": 1,
+    "create_time": 1767118733,
+    "update_time": 1767118733,
+    "_id": "Analysts"
+  }
+}

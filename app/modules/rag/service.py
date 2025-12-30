@@ -1,6 +1,7 @@
 """RAG service with EnhancedRAGPipeline integration."""
 import asyncio
 import logging
+import uuid
 from typing import Optional, Dict, Any, List
 
 from sqlalchemy.orm import Session
@@ -100,8 +101,12 @@ class RAGService:
         top_k: int = 5,
         temperature: float = 0.3,
         chat_context: Optional[List[Dict[str, Any]]] = None,
+        rolling_summary: Optional[str] = None,
+        chat_memories: Optional[List[Dict[str, Any]]] = None,
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        project_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Выполняет запрос к RAG системе с поддержкой фильтрации.
@@ -131,6 +136,10 @@ class RAGService:
                     user_id=user_id,
                     tenant_id=tenant_id,
                     chat_context=chat_context,
+                    rolling_summary=rolling_summary,
+                    chat_memories=chat_memories,
+                    project_id=project_id,
+                    project_context=project_context,
                     include_admin_laws=include_admin_laws,
                     include_customer_docs=include_customer_docs,
                     mode=mode,
@@ -150,6 +159,7 @@ class RAGService:
                     "enhanced_pipeline": True,
                     "processing_metadata": result.get("processing_metadata", {}),
                     "grounding_score": result.get("grounding_score", 0.0),
+                    "tool_outputs": result.get("tool_outputs"),
                 }
                 
             except Exception as e:
@@ -282,10 +292,21 @@ class RAGService:
                         filename = None
                         if self.db is not None:
                             try:
+                                db_file_id_raw = payload.get("stored_file_id") or payload.get("file_id")
+                                db_file_id = None
+                                if db_file_id_raw:
+                                    try:
+                                        db_file_id = uuid.UUID(str(db_file_id_raw))
+                                    except Exception:
+                                        db_file_id = None
+
+                                if db_file_id is None:
+                                    raise ValueError("No UUID file id in payload")
+
                                 db_chunk = (
                                     self.db.query(FileChunk)
                                     .filter(
-                                        FileChunk.file_id == payload.get("file_id"),
+                                        FileChunk.file_id == db_file_id,
                                         FileChunk.chunk_index == payload.get("chunk_index"),
                                     )
                                     .first()
@@ -293,12 +314,17 @@ class RAGService:
                                 if db_chunk is not None:
                                     chunk_text_value = db_chunk.text
 
-                                db_file = self.db.query(StoredFile).get(payload.get("file_id"))
+                                db_file = self.db.query(StoredFile).get(db_file_id)
                                 if db_file is not None:
                                     filename = db_file.original_filename
                             except Exception:
                                 chunk_text_value = None
                                 filename = None
+
+                        if not chunk_text_value:
+                            chunk_text_value = payload.get("text")
+                        if not filename:
+                            filename = payload.get("stored_file_original_filename") or payload.get("filename")
 
                         results.append(
                             {
@@ -311,7 +337,7 @@ class RAGService:
                                 "customer_id": None,
                                 "owner_id": payload.get("owner_id"),
                                 "text": chunk_text_value or "",
-                                "citation": f"scope=ADMIN_LAW source={payload.get('file_id')} chunk={payload.get('chunk_index')}",
+                                "citation": "",
                             }
                         )
                 except Exception as e:
@@ -341,10 +367,21 @@ class RAGService:
                         filename = None
                         if self.db is not None:
                             try:
+                                db_file_id_raw = payload.get("stored_file_id") or payload.get("file_id")
+                                db_file_id = None
+                                if db_file_id_raw:
+                                    try:
+                                        db_file_id = uuid.UUID(str(db_file_id_raw))
+                                    except Exception:
+                                        db_file_id = None
+
+                                if db_file_id is None:
+                                    raise ValueError("No UUID file id in payload")
+
                                 db_chunk = (
                                     self.db.query(FileChunk)
                                     .filter(
-                                        FileChunk.file_id == payload.get("file_id"),
+                                        FileChunk.file_id == db_file_id,
                                         FileChunk.chunk_index == payload.get("chunk_index"),
                                     )
                                     .first()
@@ -352,12 +389,17 @@ class RAGService:
                                 if db_chunk is not None:
                                     chunk_text_value = db_chunk.text
 
-                                db_file = self.db.query(StoredFile).get(payload.get("file_id"))
+                                db_file = self.db.query(StoredFile).get(db_file_id)
                                 if db_file is not None:
                                     filename = db_file.original_filename
                             except Exception:
                                 chunk_text_value = None
                                 filename = None
+
+                        if not chunk_text_value:
+                            chunk_text_value = payload.get("text")
+                        if not filename:
+                            filename = payload.get("stored_file_original_filename") or payload.get("filename")
 
                         results.append(
                             {
@@ -370,14 +412,17 @@ class RAGService:
                                 "customer_id": customer_id,
                                 "owner_id": payload.get("owner_id"),
                                 "text": chunk_text_value or "",
-                                "citation": f"scope=CUSTOMER_DOC source={payload.get('file_id')} chunk={payload.get('chunk_index')}",
+                                "citation": "",
                             }
                         )
                 except Exception as e:
                     logger.error(f"Error searching CUSTOMER_DOC documents: {e}")
 
         results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:limit]
+        trimmed = results[:limit]
+        for i, item in enumerate(trimmed, 1):
+            item["citation"] = f"[{i}]"
+        return trimmed
     
     async def _generate_answer(
         self,
@@ -430,9 +475,17 @@ class RAGService:
     
     def _get_sources_summary(self, context_docs: List[Dict[str, Any]]) -> List[str]:
         """Формирует список использованных источников."""
-        sources = []
+        sources: List[str] = []
+        seen: set[str] = set()
         for doc in context_docs:
-            sources.append(doc.get("citation", "Unknown source"))
+            file_id = doc.get("file_id")
+            if not file_id:
+                continue
+            s = str(file_id)
+            if s in seen:
+                continue
+            seen.add(s)
+            sources.append(s)
         return sources
     
     async def evidence(

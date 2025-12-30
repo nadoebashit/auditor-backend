@@ -70,8 +70,9 @@ def chunk_by_section(
     # Паттерны для секций
     # ==== или более = символов = level 1
     # ---- или более - символов = level 2
+    # ──── или более (unicode box drawing) = level 1 (часто в legal matrices)
     section_pattern = re.compile(
-        r'^(?P<marker>={4,}|-{4,})\s*$|^(?P<title>.+?)\s*\n(?P<underline>={4,}|-{4,})\s*$',
+        r'^(?P<marker>={4,}|-{4,}|─{4,})\s*$|^(?P<title>.+?)\s*\n(?P<underline>={4,}|-{4,}|─{4,})\s*$',
         re.MULTILINE
     )
     
@@ -154,6 +155,8 @@ def _split_by_sections(content: str, pattern: re.Pattern) -> List[dict]:
             current_level = 1
         elif marker.startswith("-"):
             current_level = 2
+        elif marker.startswith("─"):
+            current_level = 1
         
         # Заголовок секции
         current_title = match.group("title")
@@ -416,6 +419,25 @@ def extract_isa_references(text: str) -> List[str]:
     
     matches = pattern.findall(text)
     return list(set(f"ISA {m}" for m in matches))
+
+
+def extract_ifrs_references(text: str) -> List[str]:
+    pattern = re.compile(
+        r"\b(?:IAS|IFRS)\s*(\d{1,3}(?:\.\d+)?)\b",
+        re.IGNORECASE,
+    )
+
+    matches = pattern.findall(text)
+    out: set[str] = set()
+    for m in matches:
+        # Keep original standard prefix when possible
+        try:
+            prefix_match = re.search(rf"\b(IAS|IFRS)\s*{re.escape(m)}\b", text, flags=re.IGNORECASE)
+            prefix = (prefix_match.group(1) if prefix_match else "IAS").upper() if prefix_match else "IAS"
+        except Exception:
+            prefix = "IAS"
+        out.add(f"{prefix} {m}")
+    return list(out)
 
 
 def detect_audit_cycle(text: str) -> Optional[str]:

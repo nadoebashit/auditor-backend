@@ -111,6 +111,8 @@ async def query_rag(
             mode=request.mode,
             top_k=request.top_k,
             temperature=request.temperature,
+            tenant_id=str(request.customer_id) if request.customer_id else None,
+            user_id=str(getattr(current_user, "id", None)) if getattr(current_user, "id", None) else None,
         )
         return RAGQueryResponse(**result)
     except Exception as e:

@@ -7,6 +7,7 @@ Production-ready гибридный FileService с Qdrant + LightRAG.
 from __future__ import annotations
 
 import io
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -25,6 +26,7 @@ from app.modules.files.chunking import (
     Chunk,
     ChunkMetadata,
     extract_isa_references,
+    extract_ifrs_references,
     detect_audit_cycle,
 )
 from app.modules.files.file_text_extractor import extract_text
@@ -463,11 +465,57 @@ class HybridFileService:
             logger.warning("No chunks to index to Qdrant")
             return
 
+        kb_file_id: str | None = None
+        kb_block: str | None = None
+        file_name = (getattr(stored_file, "original_filename", None) or "").strip()
+        if stored_file.scope == FileScope.ADMIN_LAW and file_name:
+            m = re.match(r"^(?P<kb_id>[A-F]\d+)_", file_name)
+            if m:
+                kb_file_id = m.group("kb_id")
+                kb_block = kb_file_id[0] if kb_file_id else None
+
+        block_value = (
+            kb_block
+            if kb_block
+            else ("ADMIN_LAW" if stored_file.scope == FileScope.ADMIN_LAW else "CLIENT_DOC")
+        )
+
+        tree_type: str | None = None
+        if kb_file_id:
+            if kb_file_id == "D1":
+                tree_type = "legal"
+            elif kb_file_id == "D2":
+                tree_type = "acceptance"
+            elif kb_file_id == "D3":
+                tree_type = "opinion"
+            elif kb_file_id == "D4":
+                tree_type = "going_concern"
+
         # ШАГ 1: Batch эмбеддинги
         t_start = time.time()
         
         chunk_texts = [c.text for c in section_chunks]
         embeddings = self.embedding_provider.embed_batch(chunk_texts)
+
+        doc_text = "\n".join(chunk_texts)
+        decision_nodes: int | None = None
+        outcomes: list[str] | None = None
+        if kb_block == "D" and doc_text:
+            try:
+                decision_nodes = len(re.findall(r"^\s*NODE\s+\w+", doc_text, flags=re.MULTILINE))
+            except Exception:
+                decision_nodes = None
+            try:
+                outcomes = sorted(set(re.findall(r"^\s*(OUTCOME_[A-Z0-9_]+)", doc_text, flags=re.MULTILINE)))
+            except Exception:
+                outcomes = None
+
+        doc_ifrs_refs: list[str] | None = None
+        if doc_text:
+            try:
+                doc_ifrs_refs = extract_ifrs_references(doc_text)
+            except Exception:
+                doc_ifrs_refs = None
 
         metrics["times"]["qdrant_embeddings"] = time.time() - t_start
         
@@ -492,6 +540,10 @@ class HybridFileService:
             # Извлекаем ISA ссылки из конкретного чанка (дополняет документные)
             chunk_isa_refs = extract_isa_references(section_chunk.text)
             combined_isa_refs = list(set((doc_isa_refs or []) + chunk_isa_refs))
+
+            # IFRS/IAS references (TZ: ifrs_reference payload)
+            chunk_ifrs_refs = extract_ifrs_references(section_chunk.text)
+            combined_ifrs_refs = list(set((doc_ifrs_refs or []) + chunk_ifrs_refs))
             
             # Определяем цикл для чанка (fallback на документный)
             chunk_cycle = detect_audit_cycle(section_chunk.text) or doc_cycle
@@ -504,35 +556,77 @@ class HybridFileService:
                 owner_id=str(stored_file.owner_id),
                 scope=stored_file.scope.value,
                 source_type=stored_file.content_type or None,
+                section=meta.section_title,
+                char_start=meta.char_start,
+                char_end=meta.char_end,
             )
             self.db.add(chunk)
-            chunk_rows.append((chunk, section_chunk, combined_isa_refs, chunk_cycle))
+            chunk_rows.append((chunk, section_chunk, combined_isa_refs, chunk_cycle, combined_ifrs_refs))
 
         # Ensure UUIDs are generated before we reference chunk.id
         self.db.flush()
 
-        for chunk, section_chunk, isa_refs, cycle in chunk_rows:
+        for chunk, section_chunk, isa_refs, cycle, ifrs_refs in chunk_rows:
             meta = section_chunk.metadata
             chunk_id = str(chunk.id)
             point_id = chunk_id
             chunk.qdrant_point_id = point_id
 
+            formula_id: str | None = None
+            method_type: str | None = None
+            if kb_file_id in {"C1", "C2"}:
+                section_text = (meta.section_title or "").lower()
+                if kb_file_id == "C1":
+                    if "performance" in section_text or "pm" in section_text:
+                        formula_id = "PM"
+                    elif "clearly trivial" in section_text or "ctt" in section_text:
+                        formula_id = "CTT"
+                    elif "specific materiality" in section_text or "sm" in section_text:
+                        formula_id = "SM"
+                    elif "acceptable benchmarks" in section_text or "benchmarks" in section_text:
+                        formula_id = "BENCHMARK"
+                    elif "policy" in section_text:
+                        formula_id = "OM"
+                elif kb_file_id == "C2":
+                    if "mus" in section_text or "pps" in section_text:
+                        method_type = "MUS"
+                    elif "attribute" in section_text:
+                        method_type = "Attribute"
+                    elif "variables" in section_text:
+                        method_type = "Variables"
+
             # Расширенный payload по ТЗ
             payload = {
                 **base_metadata,
                 "chunk_id": chunk_id,
-                "file_id": str(chunk.file_id),
+                # TZ/G1: public KB id in file_id; keep stored_file_id separately.
+                "file_id": kb_file_id if (stored_file.scope == FileScope.ADMIN_LAW and kb_file_id) else str(chunk.file_id),
+                "stored_file_id": str(chunk.file_id),
+                "stored_file_original_filename": file_name or None,
                 "chunk_index": int(chunk.chunk_index),
                 "text": chunk.text,
                 # Новые поля по ТЗ
-                "block": meta.block,
+                "block": block_value,
+                "kb_file_id": kb_file_id,
                 "section": meta.section_title,
                 "section_level": meta.section_level,
                 "isa_reference": isa_refs,
+                "ifrs_reference": ifrs_refs,
                 "cycle": cycle,
                 "char_start": meta.char_start,
                 "char_end": meta.char_end,
             }
+
+            if tree_type is not None:
+                payload["tree_type"] = tree_type
+            if isinstance(decision_nodes, int):
+                payload["decision_nodes"] = int(decision_nodes)
+            if outcomes:
+                payload["outcomes"] = outcomes
+            if formula_id is not None:
+                payload["formula_id"] = formula_id
+            if method_type is not None:
+                payload["method_type"] = method_type
             
             qdrant_points.append(
                 PointStruct(

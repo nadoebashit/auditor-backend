@@ -1,0 +1,34 @@
+{
+  "doc-e512b511af1b91f1a261450e61d12553": {
+    "entity_names": [
+      "Global Tech Index",
+      "Gold Futures",
+      "Дополнительное Соглашение"
+    ],
+    "count": 3,
+    "create_time": 1767118659,
+    "update_time": 1767118659,
+    "_id": "doc-e512b511af1b91f1a261450e61d12553"
+  },
+  "doc-b8fcb8d95c1411e4554f2755e58574f0": {
+    "entity_names": [
+      "Tech Giants",
+      "ТОО «Геном Плюс»",
+      "Amirquram@gmail.com",
+      "Абдирасилова Д.Д.",
+      "ИП Аслан Дулатулы",
+      "Срок Действия Удостоверения Личности",
+      "Stock Markets",
+      "Dulatov A.",
+      "Gold Futures",
+      "Market Selloff",
+      "Analysts",
+      "Global Tech Index",
+      "Удостоверение Личности № 046130878"
+    ],
+    "count": 13,
+    "create_time": 1767118734,
+    "update_time": 1767118734,
+    "_id": "doc-b8fcb8d95c1411e4554f2755e58574f0"
+  }
+}
