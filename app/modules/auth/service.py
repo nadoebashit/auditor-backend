@@ -84,6 +84,11 @@ class AuthService:
         if not user.is_active:
             raise ValueError("User disabled")
 
+    @staticmethod
+    def _validate_password(password: str, user: User) -> None:
+        if not verify_password(password, user.password_hash):
+            raise ValueError("Invalid email or password")
+
     def login_telegram_auto(self, telegram_user_id: int) -> tuple[str, User]:
         user = self.repo.get_by_telegram_user_id(telegram_user_id)
         if not user:
