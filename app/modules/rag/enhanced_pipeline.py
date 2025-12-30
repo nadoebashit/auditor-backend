@@ -33,6 +33,7 @@ from app.modules.rag.gemini import GeminiAPI
 from app.modules.rag.policy_gate import PolicyGate, PolicyDecision
 from app.modules.rag.sparse_search import HybridSearch, create_hybrid_search
 from app.modules.rag.lightrag_integration import create_lightrag_service
+from app.modules.rag.reranker_mixedbread import get_mixedbread_reranker
 from app.modules.files.qdrant_client import QdrantVectorStore
 from app.modules.files.models import FileScope, FileChunk, StoredFile
 from app.modules.embeddings.service import EmbeddingService, get_embedding_service
@@ -227,6 +228,22 @@ class EnhancedRAGPipeline:
                 "governing_standards": query_plan.governing_standards[:3] if query_plan.governing_standards else [],
             },
         )
+
+        # 3.5 LightRAG (Hybrid Graph+Vector) query expansion for admin_law
+        # This is used to expand the vector-retrieval candidate pool BEFORE reranking.
+        admin_lightrag_hints = await self._lightrag_admin_hints(
+            question=question,
+            plan=query_plan,
+            policy_result=policy_result,
+            include_admin_laws=include_admin_laws,
+        )
+        lightrag_expanded_queries = self._build_lightrag_query_expansions(
+            question=question,
+            lightrag_hints=admin_lightrag_hints,
+        )
+
+        # Keep prompt-compatible structure (so UI/logs are consistent)
+        lightrag_hints = {"admin_law": admin_lightrag_hints} if admin_lightrag_hints else {}
         
         # 4. Evidence Retrieval
         t_retrieval = time.time()
@@ -237,13 +254,19 @@ class EnhancedRAGPipeline:
             plan=query_plan,
             policy_result=policy_result,
             conversation_state=conversation_state,
+            lightrag_expanded_queries=lightrag_expanded_queries,
         )
         retrieval_time = time.time() - t_retrieval
+
+        try:
+            evidence_count = sum(len(v) for v in evidence_results.values())
+        except Exception:
+            evidence_count = 0
         
         logger.info(
             "RAG_PIPELINE: Evidence retrieved",
             extra={
-                "evidence_count": len(evidence_results),
+                "evidence_count": evidence_count,
                 "retrieval_time_ms": int(retrieval_time * 1000),
             },
         )
@@ -279,14 +302,6 @@ class EnhancedRAGPipeline:
         evidence_pack = self._build_evidence_pack(ranked_evidence)
         
         # 8. Prompt Assembly
-        lightrag_hints = await self._second_signal_lightrag(
-            question=question,
-            plan=query_plan,
-            customer_id=customer_id,
-            policy_result=policy_result,
-            include_admin_laws=include_admin_laws,
-            include_customer_docs=include_customer_docs,
-        )
         final_prompt = self._assemble_prompt(
             question=question,
             conversation_state=conversation_state,
@@ -428,6 +443,9 @@ class EnhancedRAGPipeline:
                     )
                 except Exception as e:
                     logger.warning("LightRAG admin_law query failed: %s", e)
+
+        if settings.LIGHTRAG_ADMIN_ONLY:
+            return merged
 
         allowed_customer_ids = set(policy_result.allowed_customer_ids or [])
         if (
@@ -680,6 +698,7 @@ class EnhancedRAGPipeline:
         plan: QueryPlan,
         policy_result: PolicyGateResult,
         conversation_state: Dict[str, Any],
+        lightrag_expanded_queries: Optional[List[str]] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Hybrid evidence retrieval with multiple sources.
@@ -690,11 +709,13 @@ class EnhancedRAGPipeline:
             "chat_memory": [],
         }
         
-        # Create query embedding (placeholder - should use real embeddings)
+        retrieval_top_k = int(getattr(settings, "RAG_RETRIEVAL_TOP_K", 30) or 30)
+        min_similarity = float(getattr(settings, "RAG_MIN_SIMILARITY", 0.65) or 0.65)
+
         query_vector = self._create_query_embedding(question)
         
         # 1. ADMIN_LAW retrieval from G1 namespace (oson_knowledge)
-        if FileScope.ADMIN_LAW.value in policy_result.allowed_scopes and plan.admin_law_budget > 0:
+        if FileScope.ADMIN_LAW.value in policy_result.allowed_scopes:
             # Dense retrieval from admin Qdrant namespace (G1)
             admin_filter = self.qdrant_store_admin.build_filter(
                 scope=FileScope.ADMIN_LAW.value,
@@ -703,11 +724,45 @@ class EnhancedRAGPipeline:
             )
             
             try:
-                admin_points = self.qdrant_store_admin.search(
-                    query_vector=query_vector,
-                    limit=plan.admin_law_budget,
-                    filter_=admin_filter,
+                admin_points = []
+
+                # Base query
+                admin_points.extend(
+                    self.qdrant_store_admin.search(
+                        query_vector=query_vector,
+                        limit=retrieval_top_k,
+                        filter_=admin_filter,
+                    )
                 )
+
+                # LightRAG query-expansion searches (admin_law only)
+                for q in (lightrag_expanded_queries or [])[:3]:
+                    try:
+                        q_vec = self._create_query_embedding(q)
+                        admin_points.extend(
+                            self.qdrant_store_admin.search(
+                                query_vector=q_vec,
+                                limit=max(10, int(retrieval_top_k / 2)),
+                                filter_=admin_filter,
+                            )
+                        )
+                    except Exception:
+                        continue
+
+                # Merge by (file_id, chunk_index) keeping best score
+                merged_points: Dict[tuple[Any, Any], Any] = {}
+                for point in admin_points:
+                    if point is None:
+                        continue
+                    if float(getattr(point, "score", 0.0) or 0.0) < min_similarity:
+                        continue
+                    payload = point.payload or {}
+                    key = (payload.get("file_id"), payload.get("chunk_index"))
+                    prev = merged_points.get(key)
+                    if prev is None or float(point.score) > float(prev.score):
+                        merged_points[key] = point
+
+                admin_points = sorted(merged_points.values(), key=lambda p: float(p.score or 0.0), reverse=True)[:retrieval_top_k]
                 
                 for point in admin_points:
                     payload = point.payload or {}
@@ -738,51 +793,64 @@ class EnhancedRAGPipeline:
                 logger.error(f"ADMIN_LAW retrieval failed: {e}")
         
         # 2. CUSTOMER_DOC retrieval from G1_Client namespace (client_documents)
-        if FileScope.CUSTOMER_DOC.value in policy_result.allowed_scopes and plan.customer_doc_budget > 0:
-            allowed_customer_ids = policy_result.allowed_customer_ids or []
-            if allowed_customer_ids:
-                per_customer_limit = max(1, int(plan.customer_doc_budget / len(allowed_customer_ids)))
-                for allowed_customer_id in allowed_customer_ids:
-                    customer_filter = self.qdrant_store_client.build_filter(
-                        scope=FileScope.CUSTOMER_DOC.value,
-                        customer_id=allowed_customer_id,
-                        owner_id=None,
+        # TZ for chats: retrieve for the конкретный customer_id (not all allowed ids) and then dedupe.
+        if FileScope.CUSTOMER_DOC.value in policy_result.allowed_scopes and customer_id:
+            allowed_customer_ids = set(policy_result.allowed_customer_ids or [])
+            if customer_id in allowed_customer_ids:
+                customer_filter = self.qdrant_store_client.build_filter(
+                    scope=FileScope.CUSTOMER_DOC.value,
+                    customer_id=customer_id,
+                    owner_id=None,
+                )
+
+                try:
+                    customer_points = self.qdrant_store_client.search(
+                        query_vector=query_vector,
+                        limit=retrieval_top_k,
+                        filter_=customer_filter,
                     )
 
-                    try:
-                        customer_points = self.qdrant_store_client.search(
-                            query_vector=query_vector,
-                            limit=per_customer_limit,
-                            filter_=customer_filter,
-                        )
+                    merged_points: Dict[tuple[Any, Any], Any] = {}
+                    for point in customer_points:
+                        if point is None:
+                            continue
+                        if float(getattr(point, "score", 0.0) or 0.0) < min_similarity:
+                            continue
+                        payload = point.payload or {}
+                        key = (payload.get("file_id"), payload.get("chunk_index"))
+                        prev = merged_points.get(key)
+                        if prev is None or float(point.score) > float(prev.score):
+                            merged_points[key] = point
 
-                        for point in customer_points:
-                            payload = point.payload or {}
-                            chunk_text_value, filename = self._hydrate_chunk(
-                                file_id=payload.get("file_id"),
-                                chunk_index=payload.get("chunk_index"),
-                            )
-                            results["customer_docs"].append({
-                                "source": "qdrant_customer",
-                                "score": point.score,
-                                "file_id": payload.get("file_id"),
-                                "chunk_index": payload.get("chunk_index"),
-                                "filename": filename,
-                                "scope": payload.get("scope"),
-                                "customer_id": payload.get("customer_id"),
-                                "owner_id": payload.get("owner_id"),
-                                "text": chunk_text_value,
-                                "citation": f"scope=CUSTOMER_DOC source={payload.get('file_id')} chunk={payload.get('chunk_index')}",
-                                "trust_level": "client_provided",
-                                # Extended payload fields per TZ
-                                "block": payload.get("block"),
-                                "section": payload.get("section"),
-                                "section_level": payload.get("section_level"),
-                                "isa_reference": payload.get("isa_reference", []),
-                                "cycle": payload.get("cycle"),
-                            })
-                    except Exception as e:
-                        logger.error(f"CUSTOMER_DOC retrieval failed: {e}")
+                    customer_points = sorted(merged_points.values(), key=lambda p: float(p.score or 0.0), reverse=True)[:retrieval_top_k]
+
+                    for point in customer_points:
+                        payload = point.payload or {}
+                        chunk_text_value, filename = self._hydrate_chunk(
+                            file_id=payload.get("file_id"),
+                            chunk_index=payload.get("chunk_index"),
+                        )
+                        results["customer_docs"].append({
+                            "source": "qdrant_customer",
+                            "score": point.score,
+                            "file_id": payload.get("file_id"),
+                            "chunk_index": payload.get("chunk_index"),
+                            "filename": filename,
+                            "scope": payload.get("scope"),
+                            "customer_id": payload.get("customer_id"),
+                            "owner_id": payload.get("owner_id"),
+                            "text": chunk_text_value,
+                            "citation": f"scope=CUSTOMER_DOC source={payload.get('file_id')} chunk={payload.get('chunk_index')}",
+                            "trust_level": "client_provided",
+                            # Extended payload fields per TZ
+                            "block": payload.get("block"),
+                            "section": payload.get("section"),
+                            "section_level": payload.get("section_level"),
+                            "isa_reference": payload.get("isa_reference", []),
+                            "cycle": payload.get("cycle"),
+                        })
+                except Exception as e:
+                    logger.error(f"CUSTOMER_DOC retrieval failed: {e}")
         
         # 3. Chat Memory retrieval (simulated)
         if plan.chat_memory_budget > 0 and conversation_state["chat_memories"]:
@@ -861,16 +929,7 @@ class EnhancedRAGPipeline:
             if narrowed:
                 filtered = narrowed
 
-        per_file_cap = 2 if plan.intent == IntentClass.CONTRACT_SIGNATORIES else 3
-        counts: Dict[Any, int] = {}
-        capped: List[Dict[str, Any]] = []
-        for e in sorted(filtered, key=lambda x: x.get("score", 0.0), reverse=True):
-            file_id = e.get("file_id")
-            counts[file_id] = counts.get(file_id, 0) + 1
-            if counts[file_id] <= per_file_cap:
-                capped.append(e)
-
-        return capped
+        return filtered
     
     async def _rerank_evidence(
         self,
@@ -878,60 +937,44 @@ class EnhancedRAGPipeline:
         evidence: List[Dict[str, Any]],
         plan: QueryPlan,
     ) -> List[Dict[str, Any]]:
+        """Rerank evidence using Mixedbread API (cross-encoder).
+
+        Implements TZ flow: Qdrant top-N -> rerank -> top-K.
         """
-        LLM-based reranking of evidence.
-        """
-        if len(evidence) <= 10:  # No need to rerank if already small
+        if not evidence:
             return evidence
-        
-        # Create reranking prompt
-        evidence_snippets = []
-        for i, ev in enumerate(evidence[:30]):  # Take top 30 for reranking
-            evidence_snippets.append(f"{i+1}. [{ev.get('trust_level', 'unknown')}] {ev.get('citation', 'unknown')} - {ev.get('text', '')[:200]}...")
-        
-        rerank_prompt = f"""
-You are an expert auditor. Rank the following evidence pieces by relevance to the question.
 
-Question: {question}
+        # Keep rerank input bounded.
+        retrieval_top_k = int(getattr(settings, "RAG_RETRIEVAL_TOP_K", 30) or 30)
+        candidates = evidence[:retrieval_top_k]
+        top_k = int(getattr(settings, "MIXEDBREAD_RERANK_TOP_K", 5) or 5)
 
-Evidence to rank:
-{chr(10).join(evidence_snippets)}
+        if not settings.MIXEDBREAD_API_KEY:
+            # If not configured, keep deterministic fallback (no external calls).
+            return candidates[: min(top_k, len(candidates))]
 
-Return only the indices of the top 10 most relevant pieces, comma-separated, in order of relevance.
-Consider:
-1. Direct relevance to the question
-2. Trustworthiness of the source
-3. Specificity vs generality
-4. Recency if applicable
-"""
-        
+        docs: List[str] = []
+        for ev in candidates:
+            txt = (ev.get("text") or "").strip()
+            if not txt:
+                txt = (ev.get("citation") or "").strip()
+            docs.append(txt[:4000])
+
         try:
-            response = self.gemini_api.generate_content(rerank_prompt)
-            if response and 'candidates' in response:
-                result_text = response['candidates'][0]['content']['parts'][0]['text']
-                
-                # Parse indices
-                try:
-                    indices = [int(x.strip()) - 1 for x in result_text.split(',') if x.strip().isdigit()]
-                    valid_indices = [i for i in indices if 0 <= i < len(evidence)]
-                    
-                    # Return reranked evidence
-                    reranked = [evidence[i] for i in valid_indices[:10]]
-                    
-                    # Add remaining evidence that wasn't reranked
-                    remaining = [ev for i, ev in enumerate(evidence) if i not in valid_indices]
-                    reranked.extend(remaining[:5])  # Keep a few more for context
-                    
-                    return reranked
-                    
-                except (ValueError, IndexError) as e:
-                    logger.error(f"Failed to parse rerank result: {e}")
-                    return evidence[:15]  # Fallback to top 15
-            
+            reranker = await get_mixedbread_reranker()
+            results = await reranker.rerank(query=question, documents=docs, top_k=top_k)
+            if not results:
+                return candidates[: min(top_k, len(candidates))]
+
+            reranked: List[Dict[str, Any]] = []
+            for r in results:
+                ev = dict(candidates[int(r.index)])
+                ev["rerank_score"] = float(r.score)
+                reranked.append(ev)
+            return reranked
         except Exception as e:
-            logger.error(f"Reranking failed: {e}")
-        
-        return evidence[:15]  # Fallback
+            logger.warning("Mixedbread rerank failed; falling back: %s", e)
+            return candidates[: min(top_k, len(candidates))]
     
     def _build_evidence_pack(self, ranked_evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -946,7 +989,8 @@ Consider:
             }
         }
         
-        for i, ev in enumerate(ranked_evidence[:15]):  # Top 15 for final pack
+        top_k = int(getattr(settings, "MIXEDBREAD_RERANK_TOP_K", 5) or 5)
+        for i, ev in enumerate(ranked_evidence[:top_k]):
             # Add neighbors (simulate by including adjacent chunks)
             neighbors_text = ""
             if ev.get("chunk_index"):
@@ -1124,13 +1168,19 @@ Provide a professional auditor response following these guidelines:
             return self._prompt_cache[prompt_name]
         
         prompts_dir = Path(__file__).resolve().parents[2] / "prompts"
-        file_path = prompts_dir / f"{prompt_name}.txt"
+        candidates = [
+            prompts_dir / "knowledge" / f"{prompt_name}.txt",
+            prompts_dir / f"{prompt_name}.txt",
+        ]
         content = ""
-        if file_path.exists():
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except Exception:
-                content = ""
+        for file_path in candidates:
+            if file_path.exists():
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                except Exception:
+                    content = ""
+                if content:
+                    break
 
         prompt_content = {
             "name": prompt_name,
@@ -1140,6 +1190,81 @@ Provide a professional auditor response following these guidelines:
         
         self._prompt_cache[prompt_name] = prompt_content
         return prompt_content
+
+    async def _lightrag_admin_hints(
+        self,
+        *,
+        question: str,
+        plan: QueryPlan,
+        policy_result: "PolicyGateResult",
+        include_admin_laws: bool,
+    ) -> Optional[Dict[str, Any]]:
+        if (
+            not include_admin_laws
+            or FileScope.ADMIN_LAW.value not in (policy_result.allowed_scopes or [])
+        ):
+            return None
+
+        admin_svc = self._get_lightrag("admin_law")
+        if admin_svc is None:
+            return None
+
+        mode = "hybrid"
+        top_k = 8
+        if plan.intent == IntentClass.CONTRACT_SIGNATORIES:
+            mode = "local"
+            top_k = 12
+
+        try:
+            return await asyncio.wait_for(
+                admin_svc.aquery_hints(
+                    question=question,
+                    mode=mode,
+                    top_k=max(5, int(top_k / 2)),
+                ),
+                timeout=_LIGHTRAG_QUERY_TIMEOUT_S,
+            )
+        except Exception as e:
+            logger.warning("LightRAG admin_law query failed: %s", e)
+            return None
+
+    def _build_lightrag_query_expansions(
+        self,
+        *,
+        question: str,
+        lightrag_hints: Optional[Dict[str, Any]],
+    ) -> List[str]:
+        if not lightrag_hints or not isinstance(lightrag_hints, dict):
+            return []
+
+        terms: List[str] = []
+        keywords = lightrag_hints.get("keywords") or {}
+        terms.extend([str(x) for x in (keywords.get("high_level") or [])[:6]])
+        terms.extend([str(x) for x in (keywords.get("low_level") or [])[:6]])
+
+        for ent in (lightrag_hints.get("entities") or [])[:8]:
+            name = ent.get("entity_name") if isinstance(ent, dict) else None
+            if name:
+                terms.append(str(name))
+
+        # Deduplicate while preserving order
+        seen = set()
+        deduped: List[str] = []
+        for t in terms:
+            t = t.strip()
+            if not t:
+                continue
+            if t.lower() in seen:
+                continue
+            seen.add(t.lower())
+            deduped.append(t)
+
+        if not deduped:
+            return []
+
+        # One expansion query is usually enough (keeps recall and cost bounded).
+        expanded = f"{question} | {', '.join(deduped[:12])}"
+        return [expanded]
     
     async def _generate_response(self, prompt: str, temperature: float) -> Dict[str, Any]:
         """Generate response using Gemini."""

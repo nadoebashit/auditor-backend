@@ -25,6 +25,12 @@ class UserRepository:
         stmt = select(User).where(User.telegram_phone == phone)
         return self.db.scalar(stmt)
 
+    def get_by_telegram_user_id(self, telegram_user_id: int) -> User | None:
+        if telegram_user_id is None:
+            return None
+        stmt = select(User).where(User.telegram_user_id == telegram_user_id)
+        return self.db.scalar(stmt)
+
     def has_admins(self) -> bool:
         stmt = select(func.count()).select_from(User).where(User.is_admin.is_(True))
         return bool(self.db.scalar(stmt))

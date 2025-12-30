@@ -82,6 +82,7 @@ class RAGService:
         try:
             self.lightrag = create_lightrag_service(
                 working_dir=lightrag_working_dir or settings.LIGHTRAG_WORKING_DIR,
+                workspace="admin_law" if getattr(settings, "LIGHTRAG_ADMIN_ONLY", True) else None,
             )
             logger.info("LightRAG service initialized successfully")
         except Exception as e:

@@ -150,20 +150,23 @@ async def index_file_task(ctx: dict[str, Any], file_id: str) -> None:
 
                 if text:
                     scope = stored_file.scope.value
-                    if scope == "ADMIN_LAW":
-                        workspace = "admin_law"
+                    if scope != "ADMIN_LAW" and settings.LIGHTRAG_ADMIN_ONLY:
+                        pass
                     else:
-                        workspace = f"customer_{stored_file.customer_id}"
+                        if scope == "ADMIN_LAW":
+                            workspace = "admin_law"
+                        else:
+                            workspace = f"customer_{stored_file.customer_id}"
 
-                    lightrag = create_lightrag_service(
-                        working_dir=settings.LIGHTRAG_WORKING_DIR,
-                        workspace=workspace,
-                    )
+                        lightrag = create_lightrag_service(
+                            working_dir=settings.LIGHTRAG_WORKING_DIR,
+                            workspace=workspace,
+                        )
 
-                    await lightrag.ainsert(
-                        text=text,
-                        file_path=stored_file.original_filename or f"{scope}/{stored_file.id}",
-                    )
+                        await lightrag.ainsert(
+                            text=text,
+                            file_path=stored_file.original_filename or f"{scope}/{stored_file.id}",
+                        )
             except Exception as exc:
                 logger.warning(
                     "LightRAG second-signal indexing failed",

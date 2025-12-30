@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Gemini AI
     GEMINI_API_KEY: str
 
+    # Outbound HTTP / TLS
+    REQUESTS_VERIFY_SSL: bool = True
+    REQUESTS_CA_BUNDLE: str | None = None
+
     # LightRAG
     LIGHTRAG_WORKING_DIR: str = "./lightrag_cache"
     LIGHTRAG_EMBEDDING_MODEL: str = "models/text-embedding-004"
@@ -41,6 +45,14 @@ class Settings(BaseSettings):
     LIGHTRAG_EMBED_DIM: int = 3072
     LIGHTRAG_EMBED_MAX_TOKENS: int = 8192
     LIGHTRAG_SEND_DIMENSIONS: bool = False
+
+    # Mixedbread (reranking)
+    MIXEDBREAD_API_KEY: str | None = None
+    MIXEDBREAD_RERANK_MODEL: str = "mixedbread-ai/mxbai-rerank-large-v2"
+    MIXEDBREAD_RERANK_TOP_K: int = 5
+
+    # LightRAG runtime knobs
+    LIGHTRAG_ADMIN_ONLY: bool = True
 
     # Qdrant (Hybrid RAG)
     # По ТЗ: G1 (oson_knowledge) для Knowledge Base, G1_Client (client_documents) для клиентских документов
@@ -58,7 +70,6 @@ class Settings(BaseSettings):
     EMBEDDING_BATCH_SIZE: int = 32
 
     # Gemini API
-    GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-2.0-flash"
     GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
 
@@ -69,12 +80,7 @@ class Settings(BaseSettings):
     RAG_MAX_CONTEXT_TOKENS: int = 12000
     RAG_DEFAULT_TOP_K: int = 10
     RAG_RERANK_ENABLED: bool = True
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
-
+    RAG_RETRIEVAL_TOP_K: int = 30
+    RAG_MIN_SIMILARITY: float = 0.65
 
 settings = Settings()

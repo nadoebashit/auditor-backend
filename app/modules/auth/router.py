@@ -163,6 +163,24 @@ def telegram_login(
 
 
 @router.post(
+    "/telegram/auto-login",
+    response_model=TokenResponse,
+    summary="Автоматический вход для сотрудников через Telegram (по telegram_user_id)",
+)
+def telegram_auto_login(
+    telegram_user_id: int, service: AuthService = Depends(_get_auth_service)
+):
+    try:
+        token, _ = service.login_telegram_auto(telegram_user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        )
+    return TokenResponse(access_token=token)
+
+
+@router.post(
     "/admin/users",
     response_model=UserBase,
     summary="Создание сотрудника или администратора",

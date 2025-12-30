@@ -20,6 +20,8 @@ from functools import lru_cache
 import requests
 import time
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -91,7 +93,7 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
                     params=params, 
                     json=data,
                     timeout=30,
-                    verify=False  # For corporate proxies
+                    verify=(settings.REQUESTS_CA_BUNDLE or settings.REQUESTS_VERIFY_SSL)
                 )
                 response.raise_for_status()
                 
@@ -151,7 +153,7 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
                     params=params,
                     json=data,
                     timeout=60,
-                    verify=False
+                    verify=(settings.REQUESTS_CA_BUNDLE or settings.REQUESTS_VERIFY_SSL)
                 )
                 response.raise_for_status()
                 
