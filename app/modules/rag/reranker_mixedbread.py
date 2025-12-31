@@ -8,6 +8,8 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+_mixedbread_import_error_logged = False
+
 
 @dataclass
 class MixedbreadRerankResult:
@@ -45,7 +47,15 @@ class MixedbreadReranker:
         try:
             from mixedbread_ai.client import AsyncMixedbreadAI  # type: ignore
         except Exception as e:  # pragma: no cover
-            raise ImportError("mixedbread-ai package is not installed") from e
+            global _mixedbread_import_error_logged
+            if not _mixedbread_import_error_logged:
+                logger.warning("mixedbread-ai package is not installed")
+                _mixedbread_import_error_logged = True
+            k = int(top_k or self.top_k)
+            return [
+                MixedbreadRerankResult(index=i, score=0.0)
+                for i in range(min(len(documents), k))
+            ]
 
         client = AsyncMixedbreadAI(api_key=self.api_key)
         k = int(top_k or self.top_k)

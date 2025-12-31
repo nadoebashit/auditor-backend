@@ -355,10 +355,55 @@ class EnhancedRAGPipeline:
                 "has_lightrag_hints": bool(lightrag_hints),
             },
         )
+
+        if query_plan.intent == IntentClass.CONTRACT_STRUCTURE:
+            try:
+                ev_list = evidence_pack.get("evidence") if isinstance(evidence_pack, dict) else None
+                if not isinstance(ev_list, list):
+                    ev_list = []
+                max_ev_for_prompt = 20
+                ev_debug = []
+                for ev in ev_list[:max_ev_for_prompt]:
+                    if not isinstance(ev, dict):
+                        continue
+                    txt = ev.get("text")
+                    preview = ""
+                    if isinstance(txt, str):
+                        preview = txt[:220]
+                    ev_debug.append(
+                        {
+                            "source": ev.get("source"),
+                            "file_id": ev.get("file_id"),
+                            "chunk_index": ev.get("chunk_index"),
+                            "score": float(ev.get("score") or 0.0),
+                            "text_len": len(txt) if isinstance(txt, str) else 0,
+                            "text_preview": preview,
+                            "filename": ev.get("filename"),
+                            "citation": ev.get("citation"),
+                        }
+                    )
+
+                dbg = {
+                    "prompt_length": int(len(final_prompt)),
+                    "prompt_head": (final_prompt[:800] if isinstance(final_prompt, str) else ""),
+                    "prompt_tail": (final_prompt[-800:] if isinstance(final_prompt, str) else ""),
+                    "evidence_total": int(len(ev_list)),
+                    "evidence_in_prompt": int(min(len(ev_list), max_ev_for_prompt)),
+                    "evidence": ev_debug,
+                }
+                logger.info(
+                    "RAG_PIPELINE: CONTRACT_STRUCTURE prompt debug %s",
+                    json.dumps(dbg, ensure_ascii=False),
+                )
+            except Exception:
+                logger.warning("RAG_PIPELINE: CONTRACT_STRUCTURE prompt debug failed", exc_info=True)
         
         # 9. Gemini Generation
         t_generation = time.time()
-        raw_response = await self._generate_response(final_prompt, query_plan.temperature)
+        max_output_tokens = 2048
+        if query_plan.intent == IntentClass.CONTRACT_STRUCTURE:
+            max_output_tokens = 4096
+        raw_response = await self._generate_response(final_prompt, query_plan.temperature, max_output_tokens=max_output_tokens)
         generation_time = time.time() - t_generation
         
         logger.info(
@@ -377,7 +422,7 @@ class EnhancedRAGPipeline:
             evidence_pack=evidence_pack,
         )
 
-        grounded_response_text = self._sanitize_answer_text(grounded_response.get("text", ""))
+        grounded_response_text = self._sanitize_answer_text(raw_response.get("text") or "")
         
         # Calculate total pipeline time
         total_time = time.time() - pipeline_start
@@ -417,6 +462,8 @@ class EnhancedRAGPipeline:
                 "generation_time_ms": int(generation_time * 1000),
                 "processing_time": datetime.utcnow().isoformat(),
                 "lightrag_second_signal": bool(lightrag_hints),
+                "max_output_tokens": max_output_tokens,
+                "answer_len_chars": len(grounded_response_text or ""),
             }
         }
 
@@ -1237,7 +1284,7 @@ class EnhancedRAGPipeline:
         query_vector = self._create_query_embedding(question)
         
         # 1. ADMIN_LAW retrieval from G1 namespace (oson_knowledge)
-        if FileScope.ADMIN_LAW.value in policy_result.allowed_scopes:
+        if plan.admin_law_budget > 0 and FileScope.ADMIN_LAW.value in policy_result.allowed_scopes:
             admin_filter = self.qdrant_store_admin.build_filter(
                 scope=FileScope.ADMIN_LAW.value,
                 customer_id=None,
@@ -1666,6 +1713,9 @@ class EnhancedRAGPipeline:
                 ev["rerank_score"] = float(r.score)
                 reranked.append(ev)
             return reranked
+        except ImportError as e:
+            logger.info("Mixedbread rerank unavailable; falling back: %s", e)
+            return candidates[: min(top_k, len(candidates))]
         except Exception as e:
             logger.warning("Mixedbread rerank failed; falling back: %s", e)
             return candidates[: min(top_k, len(candidates))]
@@ -1809,6 +1859,10 @@ Contract structure questions (when user asks list of sections/clauses/appendices
 - Provide a short 'Итог' line.
 - Provide ONE table with the schema:
   Раздел/Приложение | Пункты/подпункты (диапазон) | Краткое содержание | Где упомянуто
+- The table separator row must be exactly:
+  | --- | --- | --- | --- |
+- Do NOT add extra sections (e.g., 'Контекст и цель', 'Выводы / Проект содержания'). Only: Итог, the table, then (if needed) 'Пробелы' and 'Acceptance tests'.
+- In 'Где упомянуто' always include a citation label like [1] and the document location if present (e.g., 'Раздел 2 [3]').
 - If evidence does not contain all sections, add 'Пробелы' and list what is missing and what to upload.
 - Add 'Acceptance tests' (pass/fail criteria) below the table.
 
@@ -2073,13 +2127,14 @@ Provide a professional auditor response following these guidelines:
         expanded = f"{question} | {', '.join(deduped[:12])}"
         return [expanded]
     
-    async def _generate_response(self, prompt: str, temperature: float) -> Dict[str, Any]:
+    async def _generate_response(self, prompt: str, temperature: float, *, max_output_tokens: int = 2048) -> Dict[str, Any]:
         """Generate response using Gemini."""
         try:
             text = await asyncio.to_thread(
                 self.gemini_api.generate_text,
                 prompt,
                 temperature=temperature,
+                max_output_tokens=int(max_output_tokens),
             )
             return {"text": text, "success": True}
                 

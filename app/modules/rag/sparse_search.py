@@ -9,6 +9,7 @@ Features:
 """
 
 import logging
+import threading
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -19,6 +20,9 @@ from app.core.logging import get_logger
 from app.modules.files.models import FileChunk, StoredFile, FileScope
 
 logger = get_logger(__name__)
+
+_FTS_WARMUP_LOCK = threading.Lock()
+_FTS_WARMED_UP = False
 
 
 @dataclass
@@ -47,6 +51,7 @@ class PostgresFTSSearch:
     def __init__(self, db: Session):
         self.db = db
         self._ensure_fts_setup()
+        self._maybe_warm_search_vectors()
     
     def _ensure_fts_setup(self):
         """
@@ -115,12 +120,18 @@ class PostgresFTSSearch:
         """
         try:
             result = self.db.execute(text("""
-                UPDATE file_chunks 
-                SET search_vector = 
-                    setweight(to_tsvector('russian', COALESCE(text, '')), 'A') ||
-                    setweight(to_tsvector('english', COALESCE(text, '')), 'B')
-                WHERE search_vector IS NULL
-                LIMIT :batch_size
+                WITH to_update AS (
+                    SELECT id
+                    FROM file_chunks
+                    WHERE search_vector IS NULL
+                    LIMIT :batch_size
+                )
+                UPDATE file_chunks fc
+                SET search_vector =
+                    setweight(to_tsvector('russian', COALESCE(fc.text, '')), 'A') ||
+                    setweight(to_tsvector('english', COALESCE(fc.text, '')), 'B')
+                FROM to_update u
+                WHERE fc.id = u.id
             """), {"batch_size": batch_size})
             
             self.db.commit()
@@ -132,6 +143,43 @@ class PostgresFTSSearch:
             logger.error(f"Failed to update search vectors: {e}")
             self.db.rollback()
             return 0
+
+    def _maybe_warm_search_vectors(self) -> None:
+        global _FTS_WARMED_UP
+
+        if _FTS_WARMED_UP:
+            return
+
+        with _FTS_WARMUP_LOCK:
+            if _FTS_WARMED_UP:
+                return
+
+            try:
+                has_null = self.db.execute(
+                    text("SELECT 1 FROM file_chunks WHERE search_vector IS NULL LIMIT 1")
+                ).fetchone()
+                if not has_null:
+                    _FTS_WARMED_UP = True
+                    return
+
+                total_updated = 0
+                for _ in range(3):
+                    updated = int(self.update_search_vectors(batch_size=5000) or 0)
+                    total_updated += updated
+                    if updated <= 0:
+                        break
+
+                logger.info(
+                    "FTS warmup completed",
+                    extra={"updated": int(total_updated)},
+                )
+                _FTS_WARMED_UP = True
+            except Exception as e:
+                logger.warning(f"FTS warmup failed: {e}")
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
     
     def search(
         self,
@@ -160,8 +208,23 @@ class PostgresFTSSearch:
         if not query_normalized:
             return []
 
+        lang = (language or "russian").strip().lower()
+        if lang not in {"russian", "english"}:
+            lang = "russian"
+
+        query_normalized_en = self._normalize_query_english(query)
+
+        tsquery_ru = "to_tsquery('russian', :query_normalized)"
+        if query_normalized_en:
+            tsquery_en = "to_tsquery('english', :query_normalized_en)"
+            match_expr = f"(fc.search_vector @@ {tsquery_ru} OR fc.search_vector @@ {tsquery_en})"
+            score_expr = f"GREATEST(ts_rank_cd(fc.search_vector, {tsquery_ru}), ts_rank_cd(fc.search_vector, {tsquery_en}))"
+        else:
+            match_expr = f"(fc.search_vector @@ {tsquery_ru})"
+            score_expr = f"ts_rank_cd(fc.search_vector, {tsquery_ru})"
+
         # Build WHERE conditions
-        conditions = ["fc.search_vector @@ to_tsquery(:language, :query_normalized)"]
+        conditions = [match_expr]
         params = {"limit": limit}
         
         if scope:
@@ -185,12 +248,12 @@ class PostgresFTSSearch:
                 fc.file_id,
                 fc.chunk_index,
                 fc.text,
-                ts_rank_cd(fc.search_vector, to_tsquery(:language, :query_normalized)) as score,
+                {score_expr} as score,
                 sf.scope,
                 sf.customer_id,
                 sf.owner_id::text,
                 sf.original_filename,
-                ts_headline(:language, fc.text, to_tsquery(:language, :query_normalized), 
+                ts_headline('{lang}', fc.text, to_tsquery('{lang}', :query_normalized), 
                     'StartSel=<mark>, StopSel=</mark>, MaxWords=50, MinWords=20') as highlights
             FROM file_chunks fc
             JOIN stored_files sf ON fc.file_id = sf.id
@@ -199,8 +262,9 @@ class PostgresFTSSearch:
             LIMIT :limit
         """)
         
-        params["language"] = language
         params["query_normalized"] = query_normalized
+        if query_normalized_en:
+            params["query_normalized_en"] = query_normalized_en
         
         try:
             result = self.db.execute(sql, params)
@@ -249,11 +313,72 @@ class PostgresFTSSearch:
         normalized = re.sub(r'[^\w\s]', ' ', query)
         # Replace multiple spaces with single space
         normalized = re.sub(r'\s+', ' ', normalized).strip()
-        # Join words with & for AND search
-        words = normalized.split()
-        if len(words) > 1:
-            return ' & '.join(words)
-        return normalized
+        words = [w for w in normalized.split() if w]
+        stop = {
+            "перечисли",
+            "перечислить",
+            "все",
+            "всё",
+            "какие",
+            "какой",
+            "какая",
+            "какое",
+            "есть",
+            "включая",
+            "включить",
+            "договор",
+            "договора",
+            "контракт",
+            "соглашение",
+        }
+        filtered: list[str] = []
+        for w in words:
+            wl = w.lower()
+            if wl in stop:
+                continue
+            if len(wl) < 3 and not wl.isdigit():
+                continue
+            if wl.isdigit():
+                filtered.append(wl)
+            elif len(wl) >= 4:
+                filtered.append(f"{wl}:*")
+            else:
+                filtered.append(wl)
+            if len(filtered) >= 12:
+                break
+        if not filtered:
+            return ""
+        if len(filtered) == 1:
+            return filtered[0]
+        return ' | '.join(filtered)
+
+    def _normalize_query_english(self, query: str) -> str:
+        import re
+
+        normalized = re.sub(r"[^A-Za-z0-9\s]", " ", query)
+        normalized = re.sub(r"\s+", " ", normalized).strip().lower()
+        if not normalized:
+            return ""
+
+        words = [w for w in normalized.split() if w]
+        filtered: list[str] = []
+        for w in words:
+            if len(w) < 3 and not w.isdigit():
+                continue
+            if w.isdigit():
+                filtered.append(w)
+            elif len(w) >= 4:
+                filtered.append(f"{w}:*")
+            else:
+                filtered.append(w)
+            if len(filtered) >= 12:
+                break
+
+        if not filtered:
+            return ""
+        if len(filtered) == 1:
+            return filtered[0]
+        return " | ".join(filtered)
 
 
 class HybridSearch:

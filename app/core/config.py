@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # Mixedbread (reranking)
     MIXEDBREAD_API_KEY: str | None = None
-    MIXEDBREAD_RERANK_MODEL: str = "mixedbread-ai/mxbai-rerank-large-v2"
+    MIXEDBREAD_RERANK_MODEL: str = "mixedbread-ai/mxbai-rerank-base-v2"
     MIXEDBREAD_RERANK_TOP_K: int = 5
 
     # LightRAG runtime knobs

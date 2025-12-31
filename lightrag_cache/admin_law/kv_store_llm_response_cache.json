@@ -208,5 +208,25 @@
     "create_time": 1767124351,
     "update_time": 1767124351,
     "_id": "local:keywords:ddf4d6e76d11bf3d7aa15d9ab190baff"
+  },
+  "local:keywords:2a5fd2c2d75ff37a3869e8e3c4243d76": {
+    "return": "{\"high_level_keywords\": [\"Contract\", \"Signatories\", \"Legal agreement\"], \"low_level_keywords\": [\"Parties\", \"Agreement\", \"Document\", \"Contractual parties\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "А какие есть подписанты по договору?",
+    "queryparam": {
+      "mode": "local",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 6,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1767134078,
+    "update_time": 1767134078,
+    "_id": "local:keywords:2a5fd2c2d75ff37a3869e8e3c4243d76"
   }
 }
