@@ -788,7 +788,14 @@ class EnhancedRAGPipeline:
                     )
                     if _LIGHTRAG_STRICT_ERRORS:
                         raise
-                except Exception:
+                except Exception as e:
+                    status_code = getattr(e, "status_code", None)
+                    try:
+                        resp = getattr(e, "response", None)
+                        if status_code is None and resp is not None:
+                            status_code = getattr(resp, "status_code", None) or getattr(resp, "status", None)
+                    except Exception:
+                        status_code = status_code
                     logger.warning(
                         "LightRAG admin_law query failed",
                         exc_info=True,
@@ -796,6 +803,9 @@ class EnhancedRAGPipeline:
                             "mode": str(mode),
                             "top_k": int(max(5, int(top_k / 2))),
                             "intent": str(getattr(plan.intent, "value", plan.intent)),
+                            "error_type": type(e).__name__,
+                            "error": str(e),
+                            "status_code": status_code,
                         },
                     )
                     if _LIGHTRAG_STRICT_ERRORS:
@@ -1539,6 +1549,170 @@ class EnhancedRAGPipeline:
                             "ifrs_reference": payload.get("ifrs_reference", []),
                             "cycle": payload.get("cycle"),
                         })
+
+                    if plan.intent == IntentClass.CONTRACT_STRUCTURE and self.db is not None:
+                        try:
+                            file_best: Dict[str, float] = {}
+                            for ev in results["customer_docs"]:
+                                if not isinstance(ev, dict):
+                                    continue
+                                fid = ev.get("file_id")
+                                if fid is None:
+                                    continue
+                                fid_str = str(fid)
+                                try:
+                                    sc = float(ev.get("score") or 0.0)
+                                except Exception:
+                                    sc = 0.0
+                                prev = file_best.get(fid_str)
+                                if prev is None or sc > prev:
+                                    file_best[fid_str] = sc
+
+                            selected: List[Tuple[str, float]] = sorted(
+                                file_best.items(),
+                                key=lambda kv: float(kv[1] or 0.0),
+                                reverse=True,
+                            )[:3]
+
+                            outline_evidence: List[Dict[str, Any]] = []
+                            for fid_str, fscore in selected:
+                                try:
+                                    fid_uuid = uuid.UUID(str(fid_str))
+                                except Exception:
+                                    continue
+
+                                stored_file = self.db.query(StoredFile).get(fid_uuid)
+                                if stored_file is None:
+                                    continue
+
+                                try:
+                                    sf_customer_id = str(getattr(stored_file, "customer_id", "") or "")
+                                except Exception:
+                                    sf_customer_id = ""
+                                if sf_customer_id and sf_customer_id != str(customer_id or ""):
+                                    continue
+
+                                try:
+                                    sf_scope = (
+                                        stored_file.scope.value
+                                        if hasattr(stored_file.scope, "value")
+                                        else str(stored_file.scope)
+                                    )
+                                except Exception:
+                                    sf_scope = None
+                                if sf_scope and sf_scope != FileScope.CUSTOMER_DOC.value:
+                                    continue
+
+                                chunks = (
+                                    self.db.query(FileChunk)
+                                    .filter(FileChunk.file_id == fid_uuid)
+                                    .order_by(FileChunk.chunk_index.asc())
+                                    .all()
+                                )
+
+                                titles: List[str] = []
+                                seen_titles: set[str] = set()
+                                for ch in chunks:
+                                    title = (getattr(ch, "section", None) or "").strip()
+                                    if title:
+                                        title_norm = re.sub(r"\s+", " ", title)
+                                        if title_norm and title_norm not in seen_titles:
+                                            seen_titles.add(title_norm)
+                                            text_norm = re.sub(
+                                                r"\s+",
+                                                " ",
+                                                (getattr(ch, "text", "") or "").strip(),
+                                            )
+                                            snip = text_norm[:220]
+                                            if snip and snip != title_norm:
+                                                titles.append(f"- {title_norm}: {snip}")
+                                            else:
+                                                titles.append(f"- {title_norm}")
+                                            if len(titles) >= 250:
+                                                break
+
+                                if not titles:
+                                    heading_pats = [
+                                        r"(?i)^(раздел|глава)\s+\d+.*$",
+                                        r"(?i)^section\s+\d+.*$",
+                                        r"(?i)^приложение\s*№?\s*[\w\d]+.*$",
+                                        r"(?i)^appendix\s+[\w\d]+.*$",
+                                        r"^\d+(?:\.\d+){0,6}\s+.+$",
+                                    ]
+                                    for ch in chunks:
+                                        text_val = getattr(ch, "text", "") or ""
+                                        for line in str(text_val).splitlines()[:60]:
+                                            l = line.strip()
+                                            if not l:
+                                                continue
+                                            if len(l) > 200:
+                                                continue
+                                            l_norm = re.sub(r"\s+", " ", l)
+                                            if not l_norm:
+                                                continue
+                                            matched = False
+                                            for pat in heading_pats:
+                                                if re.match(pat, l_norm):
+                                                    matched = True
+                                                    break
+                                            if not matched:
+                                                continue
+                                            if l_norm not in seen_titles:
+                                                titles.append(f"- {l_norm}")
+                                                seen_titles.add(l_norm)
+                                                if len(titles) >= 250:
+                                                    break
+                                        if len(titles) >= 250:
+                                            break
+
+                                if not titles:
+                                    continue
+
+                                filename = getattr(stored_file, "original_filename", None) or None
+                                outline_text = "\n".join(
+                                    (([f"Файл: {filename}"] if filename else [])
+                                    + [
+                                        "Перечень разделов/пунктов/приложений (как встречается в тексте):"
+                                    ]
+                                    + titles)
+                                )
+
+                                outline_evidence.append(
+                                    {
+                                        "source": "db_contract_outline",
+                                        "score": float(fscore or 0.0) + 1.0,
+                                        "file_id": str(fid_uuid),
+                                        "chunk_index": None,
+                                        "filename": filename,
+                                        "scope": FileScope.CUSTOMER_DOC.value,
+                                        "customer_id": customer_id,
+                                        "owner_id": None,
+                                        "text": outline_text,
+                                        "citation": f"scope=CUSTOMER_DOC source={str(fid_uuid)} outline",
+                                        "trust_level": "client_provided",
+                                        "block": None,
+                                        "section": None,
+                                        "section_level": None,
+                                        "isa_reference": [],
+                                        "ifrs_reference": [],
+                                        "cycle": None,
+                                    }
+                                )
+
+                            if outline_evidence:
+                                results["customer_docs"] = outline_evidence
+                                logger.info(
+                                    "RAG_PIPELINE: CONTRACT_STRUCTURE loaded outline evidence",
+                                    extra={
+                                        "outline_items": int(len(outline_evidence)),
+                                        "files": [e.get("filename") for e in outline_evidence],
+                                    },
+                                )
+                        except Exception:
+                            logger.warning(
+                                "RAG_PIPELINE: CONTRACT_STRUCTURE outline retrieval failed",
+                                exc_info=True,
+                            )
                 except Exception as e:
                     logger.error(f"CUSTOMER_DOC retrieval failed: {e}")
         
@@ -1690,8 +1864,16 @@ class EnhancedRAGPipeline:
         if plan.intent == IntentClass.CONTRACT_STRUCTURE:
             top_k = max(top_k, 15)
 
+        if not getattr(settings, "RAG_RERANK_ENABLED", True):
+            logger.info(
+                "RAG_PIPELINE: Rerank disabled (RAG_RERANK_ENABLED=false); skipping rerank"
+            )
+            return candidates[: min(top_k, len(candidates))]
+
         if not settings.MIXEDBREAD_API_KEY:
-            # If not configured, keep deterministic fallback (no external calls).
+            logger.info(
+                "RAG_PIPELINE: MIXEDBREAD_API_KEY not configured; skipping rerank"
+            )
             return candidates[: min(top_k, len(candidates))]
 
         docs: List[str] = []
@@ -1919,7 +2101,16 @@ Contract signatories questions (when user asks who signed / who is general direc
 
         for i, ev in enumerate(evidence_pack["evidence"][:max_ev_for_prompt]):
             prompt_parts.append(f"\n{i+1}. [{ev['trust_level'].upper()}] {ev['citation']}")
-            prompt_parts.append(f"   {self._evidence_snippet(ev.get('text', ''), question)}")
+            snippet_text = self._evidence_snippet(ev.get("text", ""), question)
+            if plan.intent == IntentClass.CONTRACT_STRUCTURE and str(ev.get("source") or "") == "db_contract_outline":
+                full_text = ev.get("text") or ""
+                if isinstance(full_text, str):
+                    max_chars = 20000
+                    if len(full_text) > max_chars:
+                        half = int((max_chars - 20) / 2)
+                        full_text = full_text[:half] + "\n...\n" + full_text[-half:]
+                    snippet_text = full_text
+            prompt_parts.append(f"   {snippet_text}")
 
         # 6.5. Second signal (LightRAG hints)
         if lightrag_hints:
@@ -2075,7 +2266,14 @@ Provide a professional auditor response following these guidelines:
             if _LIGHTRAG_STRICT_ERRORS:
                 raise
             return None
-        except Exception:
+        except Exception as e:
+            status_code = getattr(e, "status_code", None)
+            try:
+                resp = getattr(e, "response", None)
+                if status_code is None and resp is not None:
+                    status_code = getattr(resp, "status_code", None) or getattr(resp, "status", None)
+            except Exception:
+                status_code = status_code
             logger.warning(
                 "LightRAG admin_law query failed",
                 exc_info=True,
@@ -2083,6 +2281,9 @@ Provide a professional auditor response following these guidelines:
                     "mode": str(mode),
                     "top_k": int(max(5, int(top_k / 2))),
                     "intent": str(getattr(plan.intent, "value", plan.intent)),
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "status_code": status_code,
                 },
             )
             if _LIGHTRAG_STRICT_ERRORS:
