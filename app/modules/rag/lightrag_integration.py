@@ -125,6 +125,20 @@ async def _lightrag_llm_complete(
 async def _lightrag_aembed(texts: List[str], **kwargs) -> np.ndarray:
     embedding_service = get_embedding_service()
     vectors = await asyncio.to_thread(embedding_service.embed, texts)
+    target_dim = int(getattr(settings, "LIGHTRAG_EMBED_DIM", 0) or 0)
+    if target_dim > 0:
+        adapted: list[list[float]] = []
+        for v in vectors:
+            try:
+                vv = list(v)
+                if len(vv) > target_dim:
+                    vv = vv[:target_dim]
+                elif len(vv) < target_dim:
+                    vv = vv + [0.0] * (target_dim - len(vv))
+                adapted.append(vv)
+            except Exception:
+                adapted.append(list(v)[:target_dim])
+        vectors = adapted
     return np.array(vectors, dtype=np.float32)
 
 
@@ -208,8 +222,11 @@ class LightRAGService:
 
         embedding_func = None
         if LightRAGEmbeddingFunc is not None:
+            embed_dim = int(getattr(settings, "LIGHTRAG_EMBED_DIM", 0) or 0)
+            if embed_dim <= 0:
+                embed_dim = int(get_embedding_service().vector_size)
             embedding_func = LightRAGEmbeddingFunc(
-                embedding_dim=get_embedding_service().vector_size,
+                embedding_dim=embed_dim,
                 func=_lightrag_aembed,
                 model_name="auditor-embedding",
             )

@@ -35,6 +35,10 @@ class RAGQueryResponse(BaseModel):
     context: List[Dict[str, Any]] = Field(
         default_factory=list, description="Контекстные узлы/фрагменты"
     )
+    citations: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Источники/цитаты для ответа (файлы/чанки/секция/score/excerpt)",
+    )
     nodes: List[Dict[str, Any]] = Field(
         default_factory=list, description="Узлы графа (если доступно)"
     )

@@ -5,10 +5,12 @@ import logging
 import re
 from typing import Final
 
+import requests
 from docx import Document
 from pypdf import PdfReader
 
 from app.core.logging import get_logger
+from app.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -82,7 +84,7 @@ def extract_text_from_docx(file_bytes: bytes, filename: str | None = None) -> st
             if cells_text:
                 paragraphs.append(" | ".join(cells_text))
 
-    raw_text = "\n".join(paragraphs)
+    raw_text = "\n\n".join(paragraphs)
     normalized = _normalize_text(raw_text)
 
     logger.info(
@@ -126,6 +128,77 @@ def extract_text_from_pdf(file_bytes: bytes, filename: str | None = None) -> str
 
     raw_text = "\n\n".join(pages_text)
     normalized = _normalize_text(raw_text)
+
+    if (
+        getattr(settings, "AZURE_OCR_ENABLED", False)
+        and isinstance(normalized, str)
+        and len(normalized) < int(getattr(settings, "AZURE_OCR_MIN_TEXT_CHARS", 200) or 200)
+    ):
+        endpoint = getattr(settings, "AZURE_OCR_ENDPOINT", None)
+        api_key = getattr(settings, "AZURE_OCR_API_KEY", None)
+        if endpoint and api_key:
+            try:
+                timeout_s = int(getattr(settings, "AZURE_OCR_TIMEOUT_S", 120) or 120)
+                headers = {"api-key": str(api_key)}
+                files = {
+                    "file": (
+                        (filename or "document.pdf"),
+                        file_bytes,
+                        "application/pdf",
+                    )
+                }
+                resp = requests.post(
+                    str(endpoint),
+                    headers=headers,
+                    files=files,
+                    timeout=timeout_s,
+                    verify=(
+                        str(getattr(settings, "REQUESTS_CA_BUNDLE", "") or "").strip()
+                        if bool(getattr(settings, "REQUESTS_VERIFY_SSL", True))
+                        and str(getattr(settings, "REQUESTS_CA_BUNDLE", "") or "").strip()
+                        else bool(getattr(settings, "REQUESTS_VERIFY_SSL", True))
+                    ),
+                )
+                resp.raise_for_status()
+
+                data = resp.json()
+                ocr_text = ""
+                if isinstance(data, dict):
+                    if isinstance(data.get("text"), str):
+                        ocr_text = data.get("text") or ""
+                    elif isinstance(data.get("content"), str):
+                        ocr_text = data.get("content") or ""
+                    elif isinstance(data.get("pages"), list):
+                        parts: list[str] = []
+                        for p in data.get("pages") or []:
+                            if not isinstance(p, dict):
+                                continue
+                            for k in ["text", "content", "markdown"]:
+                                v = p.get(k)
+                                if isinstance(v, str) and v.strip():
+                                    parts.append(v.strip())
+                                    break
+                        ocr_text = "\n\n".join(parts)
+
+                ocr_text = _normalize_text(ocr_text)
+                if ocr_text:
+                    logger.info(
+                        "PDF OCR extracted",
+                        extra={
+                            "source_filename": filename,
+                            "chars_ocr": len(ocr_text),
+                            "chars_before_ocr": len(normalized),
+                        },
+                    )
+                    return ocr_text
+            except Exception as exc:
+                logger.warning(
+                    "PDF OCR failed; falling back to pypdf text",
+                    extra={
+                        "source_filename": filename,
+                        "error": str(exc),
+                    },
+                )
 
     logger.info(
         "PDF text extracted",

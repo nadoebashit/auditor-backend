@@ -3,12 +3,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import io
+import sys
 import uuid
 from pathlib import Path
 
 from arq import create_pool
 from arq.connections import RedisSettings
 from sqlalchemy.orm import Session
+
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
 from app.core.config import settings
 from app.core.db import Base, SessionLocal, _import_models, engine
@@ -144,9 +149,9 @@ async def seed_kb(
             logger.info(
                 "KB seed completed",
                 extra={
-                    "created": created,
-                    "enqueued": enqueued,
-                    "skipped": skipped,
+                    "kb_created": created,
+                    "kb_enqueued": enqueued,
+                    "kb_skipped": skipped,
                     "dry_run": dry_run,
                     "force": force,
                     "prompts_dir": str(resolved_prompts_dir),
@@ -155,7 +160,12 @@ async def seed_kb(
             return 0
         finally:
             try:
-                redis.close()
+                if hasattr(redis, "aclose"):
+                    await redis.aclose()  # type: ignore[attr-defined]
+                else:
+                    res = redis.close()
+                    if asyncio.iscoroutine(res):
+                        await res
             except Exception:
                 pass
             try:

@@ -22,7 +22,10 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.modules.files.chunking import (
     chunk_by_section,
+    chunk_by_node_marker,
     chunk_text_simple,
+    chunk_f1_company_profile,
+    chunk_f2_industry_pack,
     Chunk,
     ChunkMetadata,
     extract_isa_references,
@@ -35,6 +38,7 @@ from app.modules.files.qdrant_client import QdrantVectorStore
 from app.modules.files.storage import FileStorage
 from app.modules.rag.gemini import GeminiAPI
 from app.modules.rag.lightrag_integration import LightRAGService
+from app.modules.embeddings.service import EmbeddingService, get_embedding_service
 
 logger = get_logger(__name__)
 
@@ -42,16 +46,31 @@ logger = get_logger(__name__)
 class EmbeddingProvider:
     """Production embedding provider with batch support."""
 
-    def __init__(self, gemini_api: GeminiAPI):
-        self.gemini = gemini_api
+    def __init__(self, vector_size: int = 768):
+        self.vector_size = int(vector_size)
+        self._service: EmbeddingService | None = None
+
+    def _get_service(self) -> EmbeddingService:
+        if self._service is None:
+            self._service = get_embedding_service()
+        return self._service
+
+    def _adapt(self, embedding: List[float]) -> List[float]:
+        if len(embedding) == self.vector_size:
+            return embedding
+        if len(embedding) > self.vector_size:
+            return embedding[: self.vector_size]
+        return embedding + [0.0] * (self.vector_size - len(embedding))
 
     def embed(self, text: str) -> List[float]:
         """Embed single text."""
-        return self.gemini.embed_document(text)
+        service = self._get_service()
+        return self._adapt(service.embed_single(text))
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
         """Batch embed multiple texts."""
-        return self.gemini.embed_documents(texts)
+        service = self._get_service()
+        return [self._adapt(v) for v in service.embed(texts)]
 
 
 def chunk_text(text: str, chunk_size: int | None = None) -> List[str]:
@@ -87,7 +106,14 @@ class HybridFileService:
         self.vector_store_admin = vector_store_admin
         self.vector_store_client = vector_store_client
         self.lightrag = lightrag_service
-        self.embedding_provider = EmbeddingProvider(gemini_api)
+        target_size = None
+        if vector_store_admin is not None:
+            target_size = getattr(vector_store_admin, "vector_size", None)
+        if target_size is None and vector_store_client is not None:
+            target_size = getattr(vector_store_client, "vector_size", None)
+        if not isinstance(target_size, int) or target_size <= 0:
+            target_size = int(getattr(settings, "QDRANT_VECTOR_SIZE", 768))
+        self.embedding_provider = EmbeddingProvider(vector_size=int(target_size))
 
     def upload_admin_file(self, user, file) -> StoredFile:
         """Загрузка файла админа (без индексации здесь)."""
@@ -256,13 +282,27 @@ class HybridFileService:
             # ═══════════════════════════════════════════
             t_start = time.time()
 
-            # Используем section-based chunking для структурированных документов
-            section_chunks = chunk_by_section(
-                text,
-                chunk_size=settings.CHUNK_SIZE,
-                overlap=100,
-                min_chunk_size=50,
-            )
+            file_name_for_kb = (getattr(stored_file, "original_filename", None) or "").strip()
+            kb_file_id_for_chunking: str | None = None
+            if stored_file.scope == FileScope.ADMIN_LAW and file_name_for_kb:
+                m = re.match(r"^(?P<kb_id>[A-F]\d+)_", file_name_for_kb)
+                if m:
+                    kb_file_id_for_chunking = m.group("kb_id")
+
+            if kb_file_id_for_chunking in {"D2", "D3", "D4"}:
+                section_chunks = chunk_by_node_marker(text)
+            elif kb_file_id_for_chunking == "F1":
+                section_chunks = chunk_f1_company_profile(text)
+            elif kb_file_id_for_chunking == "F2":
+                section_chunks = chunk_f2_industry_pack(text)
+            else:
+                # Используем section-based chunking для структурированных документов
+                section_chunks = chunk_by_section(
+                    text,
+                    chunk_size=settings.CHUNK_SIZE,
+                    overlap=100,
+                    min_chunk_size=50,
+                )
             
             # Извлекаем ISA ссылки из всего документа
             doc_isa_refs = extract_isa_references(text)
@@ -613,6 +653,8 @@ class HybridFileService:
                 "isa_reference": isa_refs,
                 "ifrs_reference": ifrs_refs,
                 "cycle": cycle,
+                "industry_code": meta.industry_code,
+                "lang": meta.lang,
                 "char_start": meta.char_start,
                 "char_end": meta.char_end,
             }

@@ -31,18 +31,35 @@ class Settings(BaseSettings):
     # и не привязываться к pydantic типам URL (Arq всё равно принимает DSN как строку).
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    ARQ_JOB_TIMEOUT_S: int = 1800
+    ARQ_MAX_JOBS: int = 1
+
     # Gemini AI
-    GEMINI_API_KEY: str
+    GEMINI_API_KEY: str | None = None
+
+    AZURE_OPENAI_API_KEY: str | None = None
+    AZURE_OPENAI_RESPONSES_ENDPOINT: str | None = None
+    AZURE_OPENAI_RESPONSES_MODEL: str = "gpt-5.2-chat"
+    AZURE_OPENAI_EMBEDDINGS_ENDPOINT: str | None = None
+    AZURE_OPENAI_EMBEDDINGS_MODEL: str = "text-embedding-3-large"
+    AZURE_OPENAI_TIMEOUT_S: int = 120
 
     # Outbound HTTP / TLS
     REQUESTS_VERIFY_SSL: bool = True
     REQUESTS_CA_BUNDLE: str | None = None
 
+    # Azure OCR (Mistral Document AI) (optional)
+    AZURE_OCR_ENABLED: bool = False
+    AZURE_OCR_ENDPOINT: str | None = None
+    AZURE_OCR_API_KEY: str | None = None
+    AZURE_OCR_MIN_TEXT_CHARS: int = 200
+    AZURE_OCR_TIMEOUT_S: int = 120
+
     # LightRAG
     LIGHTRAG_WORKING_DIR: str = "./lightrag_cache"
     LIGHTRAG_EMBEDDING_MODEL: str = "models/text-embedding-004"
     LIGHTRAG_LLM_MODEL: str = "gemini-2.5-flash"
-    LIGHTRAG_EMBED_DIM: int = 3072
+    LIGHTRAG_EMBED_DIM: int = 768
     LIGHTRAG_EMBED_MAX_TOKENS: int = 8192
     LIGHTRAG_SEND_DIMENSIONS: bool = False
 
@@ -82,5 +99,7 @@ class Settings(BaseSettings):
     RAG_RERANK_ENABLED: bool = True
     RAG_RETRIEVAL_TOP_K: int = 30
     RAG_MIN_SIMILARITY: float = 0.65
+
+    RAG_CHAT_MEMORY_IN_PROMPT: bool = False
 
 settings = Settings()

@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.modules.embeddings.service import get_embedding_service, EmbeddingService
 from app.modules.chats.models import Chat, ChatMessage, SenderType
+from app.modules.rag.gemini import get_gemini_api
 
 logger = get_logger(__name__)
 
@@ -123,6 +124,14 @@ class ChatMemoryStore:
         """
         # Generate embedding
         embedding = self._embedding_service.embed_single(content)
+        try:
+            if isinstance(self._vector_size, int) and self._vector_size > 0:
+                if len(embedding) > self._vector_size:
+                    embedding = embedding[: self._vector_size]
+                elif len(embedding) < self._vector_size:
+                    embedding = embedding + [0.0] * (self._vector_size - len(embedding))
+        except Exception:
+            embedding = embedding
         
         point_id = str(uuid.uuid4())
         
@@ -171,6 +180,14 @@ class ChatMemoryStore:
         combined_text = f"User: {user_message.content}\nAssistant: {assistant_message.content}"
         
         embedding = self._embedding_service.embed_single(combined_text)
+        try:
+            if isinstance(self._vector_size, int) and self._vector_size > 0:
+                if len(embedding) > self._vector_size:
+                    embedding = embedding[: self._vector_size]
+                elif len(embedding) < self._vector_size:
+                    embedding = embedding + [0.0] * (self._vector_size - len(embedding))
+        except Exception:
+            embedding = embedding
         
         point_id = str(uuid.uuid4())
         
@@ -226,6 +243,14 @@ class ChatMemoryStore:
         """
         # Generate query embedding
         query_embedding = self._embedding_service.embed_single(query)
+        try:
+            if isinstance(self._vector_size, int) and self._vector_size > 0:
+                if len(query_embedding) > self._vector_size:
+                    query_embedding = query_embedding[: self._vector_size]
+                elif len(query_embedding) < self._vector_size:
+                    query_embedding = query_embedding + [0.0] * (self._vector_size - len(query_embedding))
+        except Exception:
+            query_embedding = query_embedding
         
         # Build filter
         filter_conditions = []
@@ -426,27 +451,23 @@ class ChatMemoryService:
         
         return memories
     
-    def generate_rolling_summary(
+    def summarize_chat(
         self,
-        chat_id: str,
-        gemini_api: Any = None,
+        chat: Chat,
+        messages: List[ChatMessage],
+        max_summary_tokens: int = 200,
     ) -> str:
         """
-        Generate rolling summary for a chat.
+        Summarize a chat.
         
-        Uses LLM to summarize conversation history.
+        Args:
+            chat: Chat object
+            messages: List of ChatMessage objects
+            max_summary_tokens: Max tokens in summary
+            
+        Returns:
+            Summary text
         """
-        chat = self.db.query(Chat).get(chat_id)
-        if not chat:
-            return ""
-        
-        messages = (
-            self.db.query(ChatMessage)
-            .filter(ChatMessage.chat_id == chat_id)
-            .order_by(ChatMessage.created_at.asc())
-            .all()
-        )
-        
         if len(messages) < 6:
             return ""  # Too short for summary
         
@@ -456,12 +477,13 @@ class ChatMemoryService:
             role = "User" if msg.role == "user" else "Assistant"
             conversation_text += f"{role}: {msg.content[:200]}...\n"
         
-        if not gemini_api:
+        llm = get_gemini_api()
+        if not llm:
             # Return simple summary without LLM
             return f"Previous conversation with {len(messages)} messages about audit topics."
         
         # Generate summary with LLM
-        summary_prompt = f"""Summarize this audit conversation concisely. Focus on:
+        summary_prompt = f"""Summarize the following conversation in {max_summary_tokens} tokens or less.
 1. Key facts discussed
 2. Decisions made
 3. Open questions
@@ -473,13 +495,12 @@ Conversation:
 Summary (max 200 words):"""
         
         try:
-            response = gemini_api.generate_content(summary_prompt)
-            if response and 'candidates' in response:
-                return response['candidates'][0]['content']['parts'][0]['text']
+            text = llm.generate_text(summary_prompt, temperature=0.0, max_output_tokens=int(max_summary_tokens * 8))
+            if isinstance(text, str) and text.strip():
+                return text
         except Exception as e:
-            logger.error(f"Failed to generate summary: {e}")
-        
-        return f"Previous conversation with {len(messages)} messages."
+            logger.error(f"Summary generation failed: {e}")
+            return ""
     
     def update_chat_context_cache(
         self,

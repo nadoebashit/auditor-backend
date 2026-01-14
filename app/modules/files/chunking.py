@@ -26,6 +26,8 @@ class ChunkMetadata:
     block: str = "B"  # Block B по умолчанию
     isa_reference: List[str] = field(default_factory=list)
     cycle: Optional[str] = None
+    industry_code: Optional[str] = None
+    lang: Optional[str] = None
     char_start: int = 0
     char_end: int = 0
 
@@ -126,6 +128,148 @@ def chunk_by_section(
     
     logger.info(f"Section-based chunking complete: {len(chunks)} chunks")
     return chunks
+
+
+def chunk_by_node_marker(
+    content: str,
+    *,
+    marker_pattern: str = r"^\s*NODE\s+\w+",
+    min_chunk_size: int = 20,
+) -> List[Chunk]:
+    if not content or not content.strip():
+        return []
+
+    pat = re.compile(marker_pattern, re.MULTILINE)
+    matches = list(pat.finditer(content))
+    if not matches:
+        return _chunk_by_size(
+            content,
+            chunk_size=settings.CHUNK_SIZE,
+            overlap=0,
+            min_chunk_size=min_chunk_size,
+        )
+
+    out: List[Chunk] = []
+    for idx, m in enumerate(matches):
+        start = m.start()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(content)
+        text = (content[start:end] or "").strip()
+        if not text:
+            continue
+        first_line = (text.splitlines()[0] if text.splitlines() else "").strip()
+        out.append(
+            Chunk(
+                text=text,
+                metadata=ChunkMetadata(
+                    chunk_index=len(out),
+                    section_title=first_line or None,
+                    section_level=1,
+                    char_start=int(start),
+                    char_end=int(end),
+                ),
+            )
+        )
+    return out
+
+
+def chunk_f2_industry_pack(content: str) -> List[Chunk]:
+    if not content or not content.strip():
+        return []
+
+    pat = re.compile(r"^\s*INDUSTRY:\s*$", re.MULTILINE)
+    markers = list(pat.finditer(content))
+    if not markers:
+        return _chunk_by_size(
+            content,
+            chunk_size=512,
+            overlap=50,
+            min_chunk_size=20,
+        )
+
+    out: List[Chunk] = []
+    for idx, m in enumerate(markers):
+        start = m.start()
+        end = markers[idx + 1].start() if idx + 1 < len(markers) else len(content)
+        block = (content[start:end] or "").strip()
+        if not block:
+            continue
+
+        m_code = re.search(r"^\s*code:\s*([A-Za-z0-9_-]+)\s*$", block, flags=re.MULTILINE)
+        code = (m_code.group(1).strip().upper() if m_code else None)
+        title = f"INDUSTRY {code}" if code else "INDUSTRY"
+
+        out.append(
+            Chunk(
+                text=block,
+                metadata=ChunkMetadata(
+                    chunk_index=len(out),
+                    section_title=title,
+                    section_level=1,
+                    industry_code=code,
+                    lang="EN",
+                    char_start=int(start),
+                    char_end=int(end),
+                ),
+            )
+        )
+    return out
+
+
+def chunk_f1_company_profile(content: str) -> List[Chunk]:
+    if not content or not content.strip():
+        return []
+
+    para_pat = re.compile(
+        r"(?:^|\n\s*\n)(?P<para>.*?)(?=\n\s*\n|$)",
+        flags=re.DOTALL,
+    )
+
+    current_section: Optional[str] = None
+    out: List[Chunk] = []
+
+    for m in para_pat.finditer(content):
+        para = (m.group("para") or "").strip("\n")
+        start = m.start("para")
+        end = m.end("para")
+
+        text = (para or "").strip()
+        if not text:
+            continue
+
+        if ("\n" not in text) and (":" not in text) and len(text) <= 80:
+            current_section = text
+            continue
+
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            continue
+
+        for i in range(0, len(lines), 4):
+            group = "\n".join(lines[i : i + 4]).strip()
+            if not group:
+                continue
+
+            lang: Optional[str] = None
+            if ("EN:" in group) and ("RU:" not in group):
+                lang = "EN"
+            elif ("RU:" in group) and ("EN:" not in group):
+                lang = "RU"
+
+            out.append(
+                Chunk(
+                    text=group,
+                    metadata=ChunkMetadata(
+                        chunk_index=len(out),
+                        section_title=current_section,
+                        section_level=1 if current_section else 0,
+                        lang=lang,
+                        char_start=int(start),
+                        char_end=int(end),
+                    ),
+                )
+            )
+
+    return out
 
 
 def _split_by_sections(content: str, pattern: re.Pattern) -> List[dict]:

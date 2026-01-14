@@ -124,7 +124,7 @@ async def index_file_task(ctx: dict[str, Any], file_id: str) -> None:
         db.commit()
 
         # Индексация файла
-        service.index_file(file_uuid)
+        await asyncio.to_thread(service.index_file, file_uuid)
 
         # Обновляем статус после индексации
         stored_file = db.get(StoredFile, file_uuid)
@@ -208,6 +208,9 @@ class WorkerSettings:
     functions = [index_file_task]
     on_startup = startup
     on_shutdown = shutdown
+
+    max_jobs = int(getattr(settings, "ARQ_MAX_JOBS", 1) or 1)
+    job_timeout = int(getattr(settings, "ARQ_JOB_TIMEOUT_S", 1800) or 1800)
 
     # Передаём либо RedisSettings, либо именно строку (но не AnyUrl)
     redis_settings = RedisSettings.from_dsn(str(settings.REDIS_URL))
