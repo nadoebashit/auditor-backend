@@ -127,6 +127,27 @@ class QdrantVectorStore:
             },
         )
 
+        # Defensive: ensure query vector dimension matches collection config.
+        # This prevents runtime failures when embedding provider changes (e.g. Azure 3072)
+        # but the existing Qdrant collection was created with a different dim (e.g. 768).
+        target_size = int(self._vector_size or 0)
+        if target_size > 0 and query_vector is not None:
+            try:
+                vec = list(query_vector)
+            except Exception:
+                vec = query_vector
+            try:
+                cur = len(vec)
+                if cur != target_size:
+                    if cur > target_size:
+                        vec = vec[:target_size]
+                    else:
+                        vec = vec + [0.0] * (target_size - cur)
+                query_vector = vec
+            except Exception:
+                # If anything unexpected happens, fall back to the original vector.
+                query_vector = query_vector
+
         if hasattr(self._client, "search"):
             results: List[ScoredPoint] = self._client.search(
                 collection_name=self._collection_name,

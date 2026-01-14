@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 
 from sqlalchemy.orm import Session
 
-from app.modules.rag.gemini import GeminiAPI
+from app.modules.rag.gemini import GeminiAPI, get_gemini_api
 from app.modules.rag.lightrag_integration import LightRAGService, create_lightrag_service
 from app.modules.rag.enhanced_pipeline import EnhancedRAGPipeline
 from app.modules.files.qdrant_client import QdrantVectorStore
@@ -42,7 +42,7 @@ class RAGService:
             use_enhanced_pipeline: Использовать улучшенный пайплайн
         """
         if gemini_api is None:
-            gemini_api = GeminiAPI()
+            gemini_api = get_gemini_api()
         
         self.db = db
         self.gemini_api = gemini_api
@@ -151,6 +151,7 @@ class RAGService:
                 return {
                     "answer": result["answer"],
                     "context": result["evidence_pack"]["evidence"],
+                    "citations": result["evidence_pack"]["evidence"],
                     "nodes": [],  # Enhanced pipeline doesn't use graph nodes
                     "edges": [],  # Enhanced pipeline doesn't use graph edges
                     "mode": mode,
@@ -233,6 +234,7 @@ class RAGService:
         result = {
             "answer": answer,
             "context": context_docs,
+            "citations": context_docs,
             "nodes": lightrag_result.get("nodes", []) if lightrag_result else [],
             "edges": lightrag_result.get("edges", []) if lightrag_result else [],
             "mode": mode,

@@ -37,16 +37,271 @@
   },
   "doc-4240dd9475853654b4cfa8efa42bc015": {
     "status": "failed",
-    "error_msg": "C[5/14]: chunk-3928bba0ae946b291d43b708f8482c6c: ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\\nPlease retry in 58.3018832s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '58s'}]}} (Original exception could not be reconstructed: APIError.__init__() missing 1 required positional argument: 'response_json')",
+    "error_msg": "cannot schedule new futures after shutdown",
     "content_summary": "OSON Document Intelligence\nТехническое задание для разработки\nMVP + Roadmap + Система подтверждений\nOSON SOFT\nДекабрь 2025\nСОДЕРЖАНИЕ\nЧАСТЬ 1: MVP v1.0\n1. Введение\n2. Модульная архитектура (CORE + PLUGINS)\n3. Дополнения в админку\n4. Компоненты систем...",
     "content_length": 48481,
     "created_at": "2025-12-30T18:17:16.921681+00:00",
-    "updated_at": "2025-12-30T18:26:02.165855+00:00",
+    "updated_at": "2026-01-11T00:33:43.790638+00:00",
     "file_path": "OSON_TZ_FULL.docx",
     "track_id": "insert_20251230_231716_e9b869da",
     "metadata": {
-      "processing_start_time": 1767118734,
-      "processing_end_time": 1767119162
+      "processing_start_time": 1768091623,
+      "processing_end_time": 1768091623
+    },
+    "chunks_list": []
+  },
+  "doc-5396d7754edb563db755b26ed644786a": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "# TRI-S-AUDIT — Risk Library by Cycle (EN/RU)\n# Version: v1.1\n# Date: 2025-09-19\n# Source: TRI-S-AUDIT (Trusted Source)\n# Author: Igor Tilepin\n# Reference Framework: International Standards on Auditing (ISA / МСА) — with cross-references to IFRS wher...",
+    "content_length": 23784,
+    "created_at": "2026-01-11T00:28:44.150031+00:00",
+    "updated_at": "2026-01-11T00:33:43.835981+00:00",
+    "file_path": "B1_Risk_Library_by_Cycle_v1.txt",
+    "track_id": "insert_20260111_052844_4d975631",
+    "metadata": {
+      "processing_start_time": 1768091623,
+      "processing_end_time": 1768091623
+    },
+    "chunks_list": []
+  },
+  "doc-75246ab576daaf0ce1fe55e6e4870bb1": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "08_PBC_Master_List_v1.txt\nAuthor: Igor Tilepin\nTrusted Source: TRI-S-AUDIT\n\n─────────────────────────────────────────────\nDOCUMENT: PBC (Prepared-By-Client) MASTER LIST — ISA-GUIDED, B4-LEVEL\n\nPurpose\n-------\nThis document is the master catalogue of ...",
+    "content_length": 15137,
+    "created_at": "2026-01-11T00:28:51.078915+00:00",
+    "updated_at": "2026-01-11T00:33:43.883548+00:00",
+    "file_path": "B2_PBC_Master_List_v1.txt",
+    "track_id": "insert_20260111_052851_fbd2353e",
+    "metadata": {
+      "processing_start_time": 1768091623,
+      "processing_end_time": 1768091623
+    },
+    "chunks_list": []
+  },
+  "doc-9d752c7f7416ce816c5019801bcde7cf": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: B4_FRAUD_RISK_FACTORS_V1\nTITLE: Fraud Risk Factors Library (ISA 240)\nLANG: EN\nTYPE: RISK_LIBRARY\nSTANDARDS: ISA240\nVERSION: 1.0\n\n# STRUCTURE\n#   Each item is a fraud risk factor with:\n#   - id\n#   - category (Pressure / Opportunity / Rationalisat...",
+    "content_length": 1210,
+    "created_at": "2026-01-11T00:28:55.552287+00:00",
+    "updated_at": "2026-01-11T00:33:43.906266+00:00",
+    "file_path": "B4_Fraud_Risk_Factors_ISA240_v1.txt",
+    "track_id": "insert_20260111_052855_f1310bef",
+    "metadata": {
+      "processing_start_time": 1768091623,
+      "processing_end_time": 1768091623
+    },
+    "chunks_list": []
+  },
+  "doc-555063a17efe48a09778331e1b15a454": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: B5_ESTIMATES_ISA540_LIBRARY_V1\nTITLE: Accounting Estimates Library\nLANG: EN\nTYPE: RISK_LIBRARY\nSTANDARDS: ISA540\nVERSION: 1.0\n\n# STRUCTURE PER ESTIMATE\n#   - estimate_id\n#   - name\n#   - examples\n#   - inherent_risk_level\n#   - relevant_assertion...",
+    "content_length": 1061,
+    "created_at": "2026-01-11T00:28:59.698967+00:00",
+    "updated_at": "2026-01-11T00:33:44.008794+00:00",
+    "file_path": "B5_Estimates_ISA540_Library_v1.txt",
+    "track_id": "insert_20260111_052859_d958b3ae",
+    "metadata": {
+      "processing_start_time": 1768091623,
+      "processing_end_time": 1768091624
+    },
+    "chunks_list": []
+  },
+  "doc-bfbf86e9cee1b2f4695b5f55916e7ac9": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: B6_GOING_CONCERN_INDICATORS_V1\nTITLE: Going Concern Indicators (ISA 570)\nLANG: EN\nTYPE: CHECKLIST_LIBRARY\nSTANDARDS: ISA570\nVERSION: 1.0\n\n# CATEGORIES: Financial, Operating, Other\n\nINDICATOR:\nid: GC_FIN01\ncategory: Financial\ndescription: \"Net lia...",
+    "content_length": 908,
+    "created_at": "2026-01-11T00:29:04.204779+00:00",
+    "updated_at": "2026-01-11T00:33:44.621975+00:00",
+    "file_path": "B6_GoingConcern_ISA570_Indicators_v1.txt",
+    "track_id": "insert_20260111_052904_95de693c",
+    "metadata": {
+      "processing_start_time": 1768091624,
+      "processing_end_time": 1768091624
+    },
+    "chunks_list": []
+  },
+  "doc-20fadbd2d9a95289280bacdda426ed19": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: B7_RELATED_PARTIES_CHECKLIST_V1\nTITLE: Related Parties Checklist (ISA 550)\nLANG: EN\nTYPE: CHECKLIST\nSTANDARDS: ISA550\nVERSION: 1.0\n\n# SECTIONS\nSECTION: Identification\nQ1: Has management provided a list of related parties (individuals and entities...",
+    "content_length": 872,
+    "created_at": "2026-01-11T00:29:08.308298+00:00",
+    "updated_at": "2026-01-11T00:33:44.818607+00:00",
+    "file_path": "B7_RelatedParties_ISA550_Checklist_v1.txt",
+    "track_id": "insert_20260111_052908_a1c2fc50",
+    "metadata": {
+      "processing_start_time": 1768091624,
+      "processing_end_time": 1768091624
+    },
+    "chunks_list": []
+  },
+  "doc-3712067c0c27ab8d6281a6b11069119b": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: B8_SUBSEQUENT_EVENTS_LIBRARY_V1\nTITLE: Subsequent Events Library (ISA 560)\nLANG: EN\nTYPE: CHECKLIST_LIBRARY\nSTANDARDS: ISA560\nVERSION: 1.0\n\nEVENT_TYPE:\nid: SE_ADJ01\nclass: Adjusting\ndescription: \"Receipt of information confirming conditions exist...",
+    "content_length": 867,
+    "created_at": "2026-01-11T00:29:16.802547+00:00",
+    "updated_at": "2026-01-11T00:33:44.854452+00:00",
+    "file_path": "B8_SubsequentEvents_ISA560_Library_v1.txt",
+    "track_id": "insert_20260111_052916_6f4b161a",
+    "metadata": {
+      "processing_start_time": 1768091624,
+      "processing_end_time": 1768091624
+    },
+    "chunks_list": []
+  },
+  "doc-857c0ed073d8209978d2414a986e3e13": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "# TRI-S-AUDIT — Materiality Playbook (EN/RU)\n# Version: v1.1\n# Date: 2025-09-19\n# Source: TRI-S-AUDIT (Trusted Source)\n# Author: Igor Tilepin\n# Reference Framework: International Standards on Auditing (ISA / МСА); firm policy anchored to ISA 320 & IS...",
+    "content_length": 8101,
+    "created_at": "2026-01-11T00:29:23.660277+00:00",
+    "updated_at": "2026-01-11T00:33:44.917764+00:00",
+    "file_path": "C1_Materiality_Playbook_v1.1.txt",
+    "track_id": "insert_20260111_052923_3f68b3b7",
+    "metadata": {
+      "processing_start_time": 1768091624,
+      "processing_end_time": 1768091624
+    },
+    "chunks_list": []
+  },
+  "doc-2f797cc3aa42ee1309e034a2560b3864": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "# TRI-S-AUDIT — Sampling Methods Playbook (EN/RU)\n# Version: v1.0\n# Date: 2025-09-19\n# Source: TRI-S-AUDIT (Trusted Source)\n# Author: Igor Tilepin\n# Reference Framework: International Standards on Auditing (ISA / МСА) — ISA 530 (Audit Sampling), ISA ...",
+    "content_length": 13068,
+    "created_at": "2026-01-11T00:29:30.593765+00:00",
+    "updated_at": "2026-01-11T00:33:45.149318+00:00",
+    "file_path": "C2_Sampling_Methods_ISA530_v1.txt",
+    "track_id": "insert_20260111_052930_238071f4",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
+    },
+    "chunks_list": []
+  },
+  "doc-23d90e84a9d6dfb20b8a0f4badd65f19": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: C4_TESTING_PROCEDURES_V1\nTITLE: Testing Procedures Framework (ToC, SAP, ToD)\nLANG: EN\nTYPE: PROCEDURE_FRAMEWORK\nSTANDARDS: ISA500, ISA520, ISA530\nVERSION: 1.0\n\n# TEST TYPES\nTEST_TYPE:\ncode: ToC\nname: \"Test of Controls\"\ndescription: \"Evaluate oper...",
+    "content_length": 1150,
+    "created_at": "2026-01-11T00:29:34.715386+00:00",
+    "updated_at": "2026-01-11T00:33:45.185912+00:00",
+    "file_path": "C4_Testing_Procedures_ISA500_520_530_v1.txt",
+    "track_id": "insert_20260111_052934_b4793d98",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
+    },
+    "chunks_list": []
+  },
+  "doc-49352ce6d0074c133bc7e8f1bc815a26": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: C5_MISSTATEMENTS_FORMULAS_V1\nTITLE: Misstatements & SUD Logic (ISA 450)\nLANG: EN\nTYPE: FORMULAS\nSTANDARDS: ISA450\nVERSION: 1.0\n\n# TYPES\nMISSTATEMENT_TYPE:\n- factual\n- judgmental\n- projected\n\n# AGGREGATION LOGIC (high-level)\nFORMULA:\nname: total_u...",
+    "content_length": 819,
+    "created_at": "2026-01-11T00:29:39.371882+00:00",
+    "updated_at": "2026-01-11T00:33:45.217285+00:00",
+    "file_path": "C5_Misstatements_ISA450_Formulas_v1.txt",
+    "track_id": "insert_20260111_052939_fcf0c8df",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
+    },
+    "chunks_list": []
+  },
+  "doc-da8699bf4eba9a8cf6e19664121eac19": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "File: 07_Legal_Matrix_ISA560_501_v1.txt\nAuthor: Igor Tilepin\nTrusted Source: TRI-S-AUDIT\n\n─────────────────────────────────────────────\nDOCUMENT: LEGAL MATRIX (ISA 560 / ISA 501)\n\nPurpose\n-------\nThe Legal Matrix is the auditor’s structured register ...",
+    "content_length": 6716,
+    "created_at": "2026-01-11T00:29:46.968424+00:00",
+    "updated_at": "2026-01-11T00:33:45.246255+00:00",
+    "file_path": "D1_Legal_Matrix_ISA560_501_v1.txt",
+    "track_id": "insert_20260111_052946_19d940c0",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
+    },
+    "chunks_list": []
+  },
+  "doc-5bb85b4487fcfde151ad85f4e8570b41": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: D2_ACCEPTANCE_CONTINUANCE_TREE_V1\nTITLE: Acceptance & Continuance Decision Tree\nLANG: EN\nTYPE: DECISION_TREE\nSTANDARDS: ISQM1, ISA220, ISA210\nVERSION: 1.0\n\n# NODE FORMAT:\n#   NODE <id>\n#     QUESTION: ...\n#     YES: <next_node or outcome>\n#     N...",
+    "content_length": 1131,
+    "created_at": "2026-01-11T00:29:54.182951+00:00",
+    "updated_at": "2026-01-11T00:33:45.269028+00:00",
+    "file_path": "D2_Acceptance_Continuance_ISQM1_ISA220_Tree_v1.txt",
+    "track_id": "insert_20260111_052954_77313547",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
+    },
+    "chunks_list": []
+  },
+  "doc-ecd544ad660217715947b4003d226eae": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: D3_OPINION_DECISION_TREE_V1\nTITLE: Opinion Type Decision Tree\nLANG: EN\nTYPE: DECISION_TREE\nSTANDARDS: ISA700, ISA705, ISA706\nVERSION: 1.0\n\n# KEY INPUTS:\n#   misstatements_material (true/false)\n#   misstatements_pervasive (true/false)\n#   scope_li...",
+    "content_length": 1461,
+    "created_at": "2026-01-11T00:30:03.944256+00:00",
+    "updated_at": "2026-01-11T00:33:45.288907+00:00",
+    "file_path": "D3_Opinion_Decision_Tree_ISA700_705_706_v1.txt",
+    "track_id": "insert_20260111_053003_929b9b84",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
+    },
+    "chunks_list": []
+  },
+  "doc-f45616ef3c0fcfa1a1ac272aa13a5fc5": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: D4_GOING_CONCERN_TREE_V1\nTITLE: Going Concern Decision Tree\nLANG: EN\nTYPE: DECISION_TREE\nSTANDARDS: ISA570\nVERSION: 1.0\n\n# INPUTS:\n#   indicators_present (true/false)\n#   management_assessment_prepared (true/false)\n#   material_uncertainty_exists...",
+    "content_length": 1382,
+    "created_at": "2026-01-11T00:30:09.751831+00:00",
+    "updated_at": "2026-01-11T00:33:45.324866+00:00",
+    "file_path": "D4_GoingConcern_Decision_Tree_ISA570_v1.txt",
+    "track_id": "insert_20260111_053009_0ec213ee",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
+    },
+    "chunks_list": []
+  },
+  "doc-bfb2e63735774a4453b32a8113ef8ab4": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "Company Profile — TRI-S-Audit\nMetadata (for RAG)\n\nKB-Tags: company-profile, tri-s-audit, tilepin, audit, ifrs, isa, forensic, uzbekistan, central-asia, services, contacts, brand-voice, disclaimers\nVersion: 0.1 (2025-09-18)\nSource of Truth Owner: TRI-...",
+    "content_length": 3535,
+    "created_at": "2026-01-11T00:30:24.573848+00:00",
+    "updated_at": "2026-01-11T00:33:45.348918+00:00",
+    "file_path": "F1_Company_Profile_TRI-S-Audit_v1.txt",
+    "track_id": "insert_20260111_053024_2115c239",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
+    },
+    "chunks_list": []
+  },
+  "doc-2b957c60694d22cdfd6bcb1586b249f6": {
+    "status": "failed",
+    "error_msg": "cannot schedule new futures after shutdown",
+    "content_summary": "ID: F2_INDUSTRY_KNOWLEDGE_PACK_V1\nTITLE: Industry Knowledge Pack (High Level)\nLANG: EN\nTYPE: KNOWLEDGE_PACK\nVERSION: 1.0\n\n# FORMAT\n#   INDUSTRY block with:\n#     - code\n#     - name\n#     - key_revenue_models\n#     - key_risks\n#     - typical_control...",
+    "content_length": 889,
+    "created_at": "2026-01-11T00:30:35.862233+00:00",
+    "updated_at": "2026-01-11T00:33:45.372470+00:00",
+    "file_path": "F2_Industry_Knowledge_Pack_v1.txt",
+    "track_id": "insert_20260111_053035_e2dad238",
+    "metadata": {
+      "processing_start_time": 1768091625,
+      "processing_end_time": 1768091625
     },
     "chunks_list": []
   }

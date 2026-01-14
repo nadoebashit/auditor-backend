@@ -465,6 +465,13 @@ class HybridSearch:
         try:
             # Get query embedding
             query_vector = self.embedding_service.embed_single(query)
+
+            target_size = getattr(self.qdrant_store, "vector_size", None)
+            if isinstance(target_size, int) and target_size > 0:
+                if len(query_vector) > target_size:
+                    query_vector = query_vector[:target_size]
+                elif len(query_vector) < target_size:
+                    query_vector = query_vector + [0.0] * (target_size - len(query_vector))
             
             # Build filter
             filter_ = self.qdrant_store.build_filter(

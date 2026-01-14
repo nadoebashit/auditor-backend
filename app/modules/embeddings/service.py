@@ -173,6 +173,71 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         return all_embeddings
 
 
+class AzureOpenAIEmbeddingProvider(EmbeddingProvider):
+    name = "azure_openai"
+    vector_size = 3072
+
+    def __init__(
+        self,
+        api_key: str,
+        endpoint: str,
+        model: str = "text-embedding-3-large",
+        timeout_s: int = 120,
+    ):
+        self.api_key = api_key
+        self.endpoint = endpoint
+        self.model = model
+        self.timeout_s = int(timeout_s)
+
+        logger.info(
+            "Initialized Azure OpenAI embedding provider",
+            extra={"model": model, "endpoint": endpoint},
+        )
+
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+
+        endpoint_lower = (self.endpoint or "").lower()
+        payload: dict[str, object] = {
+            "input": [t[:32000] if len(t) > 32000 else t for t in texts],
+        }
+        if "/deployments/" not in endpoint_lower:
+            payload["model"] = self.model
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": self.api_key,
+        }
+
+        response = requests.post(
+            self.endpoint,
+            headers=headers,
+            json=payload,
+            timeout=self.timeout_s,
+            verify=(settings.REQUESTS_CA_BUNDLE or settings.REQUESTS_VERIFY_SSL),
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        items = data.get("data")
+        if not isinstance(items, list):
+            raise ValueError("Invalid Azure embeddings response: missing data")
+
+        vectors: list[list[float]] = []
+        for item in items:
+            if not isinstance(item, dict) or "embedding" not in item:
+                raise ValueError("Invalid Azure embeddings response item")
+            vectors.append([float(x) for x in item["embedding"]])
+
+        if len(vectors) != len(texts):
+            raise ValueError("Invalid Azure embeddings response length")
+
+        if vectors:
+            self.vector_size = len(vectors[0])
+
+        return vectors
+
+
 class OpenAIEmbeddingProvider(EmbeddingProvider):
     """
     OpenAI embedding provider as fallback.
@@ -282,6 +347,9 @@ class EmbeddingService:
     
     def __init__(
         self,
+        azure_openai_api_key: Optional[str] = None,
+        azure_openai_embeddings_endpoint: Optional[str] = None,
+        azure_openai_embeddings_model: Optional[str] = None,
         gemini_api_key: Optional[str] = None,
         openai_api_key: Optional[str] = None,
         use_local_fallback: bool = True,
@@ -292,7 +360,14 @@ class EmbeddingService:
         self._cache: Dict[str, List[float]] = {}
         self._cache_max_size = 10000
         
-        self._init_providers(gemini_api_key, openai_api_key, use_local_fallback)
+        self._init_providers(
+            azure_openai_api_key,
+            azure_openai_embeddings_endpoint,
+            azure_openai_embeddings_model,
+            gemini_api_key,
+            openai_api_key,
+            use_local_fallback,
+        )
         
         if not self.providers:
             raise RuntimeError("No embedding providers available")
@@ -303,22 +378,39 @@ class EmbeddingService:
     
     def _init_providers(
         self, 
+        azure_openai_api_key: Optional[str],
+        azure_openai_embeddings_endpoint: Optional[str],
+        azure_openai_embeddings_model: Optional[str],
         gemini_api_key: Optional[str],
         openai_api_key: Optional[str],
         use_local_fallback: bool
     ):
         """Initialize available providers in priority order."""
-        
-        # 1. Gemini as primary (free tier available)
+
+        # 1. Azure OpenAI embeddings as primary
+        if azure_openai_api_key and azure_openai_embeddings_endpoint:
+            try:
+                provider = AzureOpenAIEmbeddingProvider(
+                    api_key=azure_openai_api_key,
+                    endpoint=azure_openai_embeddings_endpoint,
+                    model=azure_openai_embeddings_model or "text-embedding-3-large",
+                    timeout_s=int(getattr(settings, "AZURE_OPENAI_TIMEOUT_S", 120)),
+                )
+                self.providers.append(provider)
+                logger.info("Added Azure OpenAI embedding provider (primary)")
+            except Exception as e:
+                logger.error(f"Failed to init Azure OpenAI embedding provider: {e}")
+
+        # 2. Gemini (legacy)
         if gemini_api_key:
             try:
                 provider = GeminiEmbeddingProvider(gemini_api_key)
                 self.providers.append(provider)
-                logger.info("Added Gemini embedding provider (primary)")
+                logger.info("Added Gemini embedding provider")
             except Exception as e:
                 logger.error(f"Failed to init Gemini provider: {e}")
-        
-        # 2. OpenAI as fallback
+
+        # 3. OpenAI as fallback
         if openai_api_key:
             try:
                 provider = OpenAIEmbeddingProvider(openai_api_key)
@@ -326,14 +418,13 @@ class EmbeddingService:
                 logger.info("Added OpenAI embedding provider (fallback)")
             except Exception as e:
                 logger.error(f"Failed to init OpenAI provider: {e}")
-        
-        # 3. Local SentenceTransformers as last resort
+
+        # 4. Local SentenceTransformers as last resort
         if use_local_fallback:
             try:
                 provider = SentenceTransformerProvider()
                 if provider.model is not None:
                     self.providers.append(provider)
-                    logger.info("Added SentenceTransformer provider (local fallback)")
             except Exception as e:
                 logger.error(f"Failed to init SentenceTransformer provider: {e}")
     
@@ -468,6 +559,9 @@ def get_embedding_service() -> EmbeddingService:
         from app.core.config import settings
 
         _embedding_service = EmbeddingService(
+            azure_openai_api_key=settings.AZURE_OPENAI_API_KEY,
+            azure_openai_embeddings_endpoint=settings.AZURE_OPENAI_EMBEDDINGS_ENDPOINT,
+            azure_openai_embeddings_model=settings.AZURE_OPENAI_EMBEDDINGS_MODEL,
             gemini_api_key=settings.GEMINI_API_KEY,
             openai_api_key=settings.OPENAI_API_KEY,
             use_local_fallback=True,

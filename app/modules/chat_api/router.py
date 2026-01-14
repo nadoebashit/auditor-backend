@@ -89,6 +89,7 @@ async def chat(
         processing_intent=str(intent) if intent else None,
         project_id=str(project.id),
         tool_outputs=rag_result.get("tool_outputs") if isinstance(rag_result.get("tool_outputs"), dict) else None,
+        citations=rag_result.get("context") if isinstance(rag_result.get("context"), list) else None,
         file=None,
     )
 

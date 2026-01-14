@@ -47,6 +47,7 @@ class ChatResponse(BaseModel):
     table: Optional[TableData] = None
     file: Optional[FileInfo] = None
     redirect: Optional[RedirectData] = None
+    citations: Optional[list[dict[str, Any]]] = None
 
 
 _INTENT_MAP: dict[str, str] = {
@@ -81,6 +82,7 @@ class ResponseFormatter:
         project_id: str | None,
         tool_outputs: dict[str, Any] | None = None,
         file: FileInfo | None = None,
+        citations: list[dict[str, Any]] | None = None,
     ) -> ChatResponse:
         intent = _INTENT_MAP.get(str(processing_intent or "").strip(), str(processing_intent or "UNKNOWN"))
         buttons: list[Button] | None = None
@@ -211,4 +213,5 @@ class ResponseFormatter:
             table=table,
             file=file,
             redirect=redirect,
+            citations=citations,
         )

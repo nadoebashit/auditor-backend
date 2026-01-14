@@ -129,10 +129,9 @@ try:
         from google.genai import types as genai_types  # type: ignore
     except Exception:  # pragma: no cover
         genai_types = None  # type: ignore
-except Exception as e:  # pragma: no cover
-    raise ImportError(
-        "google-genai SDK is required. Install with: pip install google-genai"
-    ) from e
+except Exception:  # pragma: no cover
+    genai = None  # type: ignore
+    genai_types = None  # type: ignore
 
 from app.core.config import settings
 
@@ -154,7 +153,12 @@ def get_gemini_api() -> "GeminiAPI":
     if _gemini_api_instance is None:
         with _gemini_api_lock:
             if _gemini_api_instance is None:
-                _gemini_api_instance = GeminiAPI()
+                if settings.AZURE_OPENAI_API_KEY and settings.AZURE_OPENAI_RESPONSES_ENDPOINT:
+                    from app.modules.rag.azure_openai import AzureOpenAIAPI
+
+                    _gemini_api_instance = AzureOpenAIAPI()  # type: ignore[assignment]
+                else:
+                    _gemini_api_instance = GeminiAPI()
     return _gemini_api_instance
 
 
@@ -173,6 +177,10 @@ class GeminiAPI:
         llm_model: Optional[str] = None,
         embedding_model: Optional[str] = None,
     ):
+        if genai is None:
+            raise ImportError(
+                "google-genai SDK is required for GeminiAPI. Install with: pip install google-genai"
+            )
         api_key = api_key or settings.GEMINI_API_KEY
         if not api_key:
             raise ValueError("GEMINI_API_KEY is not configured")

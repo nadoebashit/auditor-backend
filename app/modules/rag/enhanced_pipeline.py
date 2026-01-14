@@ -68,6 +68,9 @@ class IntentClass(Enum):
     """Intent classes for query routing."""
     CONTRACT_SIGNATORIES = "contract_signatories"
     CONTRACT_STRUCTURE = "contract_structure"
+    DOC_QA = "doc_qa"
+    COMPANY_FAQ = "company_faq"
+    INDUSTRY_GUIDANCE = "industry_guidance"
     PLANNING_MATERIALITY = "planning_materiality"
     SAMPLING = "sampling"
     RISK_ASSESSMENT = "risk_assessment"
@@ -336,7 +339,7 @@ class EnhancedRAGPipeline:
         )
         
         # 7. Evidence Builder
-        evidence_pack = self._build_evidence_pack(ranked_evidence, query_plan)
+        evidence_pack = self._build_evidence_pack(ranked_evidence, query_plan, question)
         
         # 8. Prompt Assembly
         final_prompt = self._assemble_prompt(
@@ -403,6 +406,8 @@ class EnhancedRAGPipeline:
         max_output_tokens = 2048
         if query_plan.intent == IntentClass.CONTRACT_STRUCTURE:
             max_output_tokens = 4096
+        elif query_plan.intent == IntentClass.DOC_QA:
+            max_output_tokens = 3072
         raw_response = await self._generate_response(final_prompt, query_plan.temperature, max_output_tokens=max_output_tokens)
         generation_time = time.time() - t_generation
         
@@ -927,7 +932,7 @@ class EnhancedRAGPipeline:
         
         # Layer 3: Chat Memory Retrieval
         effective_memories: List[Dict[str, Any]] = []
-        if chat_memories and isinstance(chat_memories, list):
+        if getattr(settings, "RAG_CHAT_MEMORY_IN_PROMPT", False) and chat_memories and isinstance(chat_memories, list):
             effective_memories = [m for m in chat_memories if isinstance(m, dict)][:5]
         
         return {
@@ -1061,7 +1066,33 @@ class EnhancedRAGPipeline:
         patterns = []
         standards = []
 
-        if any(
+        if intent == IntentClass.SMALLTALK and any(
+            w in question_lower
+            for w in [
+                "акт",
+                "приложени",
+                "документ",
+                "файл",
+            ]
+        ) and any(
+            w in question_lower
+            for w in [
+                "какие",
+                "перечень",
+                "список",
+                "что указано",
+                "что написано",
+            ]
+        ):
+            intent = IntentClass.DOC_QA
+            required_evidence = "must_cite"
+            admin_budget = 0
+            customer_budget = 12
+            chat_budget = 2
+            total_limit = 12000
+            temp = 0.2
+
+        if intent == IntentClass.SMALLTALK and any(
             word in question_lower
             for word in [
                 "пункт",
@@ -1078,6 +1109,56 @@ class EnhancedRAGPipeline:
             admin_budget = 0
             customer_budget = 12
             patterns = ["contract_outline", "sections", "clauses"]
+
+        # Block F: Company FAQ (TRI-S-AUDIT profile)
+        if intent == IntentClass.SMALLTALK and any(
+            w in question_lower
+            for w in [
+                "tri-s-audit",
+                "tri s",
+                "три-с",
+                "трис",
+                "контак",
+                "телефон",
+                "whatsapp",
+                "telegram",
+                "email",
+                "сайт",
+                "адрес",
+                "какие услуги",
+                "услуги предлагает",
+                "кто вы",
+                "о компании",
+            ]
+        ):
+            intent = IntentClass.COMPANY_FAQ
+            required_evidence = "helpful"
+            admin_budget = max(admin_budget, 4)
+            customer_budget = 0
+            patterns = patterns + ["company_profile", "contacts", "services"]
+
+        # Block F: Industry guidance (typical risks/controls)
+        if intent == IntentClass.SMALLTALK and any(
+            w in question_lower
+            for w in [
+                "industry",
+                "отрасл",
+                "типичные риски",
+                "typical risks",
+                "typical controls",
+                "контроли",
+                "retail",
+                "ритейл",
+                "розниц",
+                "insurance",
+                "страх",
+            ]
+        ):
+            intent = IntentClass.INDUSTRY_GUIDANCE
+            required_evidence = "helpful"
+            admin_budget = max(admin_budget, 4)
+            customer_budget = 0
+            patterns = patterns + ["industry_pack", "risks", "controls"]
 
         # Contract signatories / parties (strict cue set; do not trigger on generic contract-structure questions)
         if intent != IntentClass.CONTRACT_STRUCTURE and any(
@@ -1260,7 +1341,7 @@ class EnhancedRAGPipeline:
 
         retrieval_top_k = int(getattr(settings, "RAG_RETRIEVAL_TOP_K", 30) or 30)
         min_similarity = float(getattr(settings, "RAG_MIN_SIMILARITY", 0.65) or 0.65)
-        if plan.intent == IntentClass.CONTRACT_STRUCTURE:
+        if plan.intent == IntentClass.CONTRACT_STRUCTURE or plan.intent == IntentClass.DOC_QA:
             # For outline/structure questions recall is more important than precision.
             retrieval_top_k = max(retrieval_top_k, 60)
             min_similarity = min(min_similarity, 0.55)
@@ -1291,6 +1372,20 @@ class EnhancedRAGPipeline:
             min_similarity = max(min_similarity, 0.75)
             kb_file_ids = ["D4", "B6"]
 
+        industry_code: str | None = None
+        if plan.intent == IntentClass.COMPANY_FAQ:
+            retrieval_top_k = min(retrieval_top_k, 10)
+            min_similarity = max(min_similarity, 0.70)
+            kb_file_ids = ["F1"]
+        elif plan.intent == IntentClass.INDUSTRY_GUIDANCE:
+            retrieval_top_k = min(retrieval_top_k, 10)
+            min_similarity = max(min_similarity, 0.70)
+            kb_file_ids = ["F2"]
+            if any(w in question.lower() for w in ["retail", "ритейл", "розниц"]):
+                industry_code = "RETAIL"
+            elif any(w in question.lower() for w in ["insurance", "страх"]):
+                industry_code = "INSURANCE"
+
         query_vector = self._create_query_embedding(question)
         
         # 1. ADMIN_LAW retrieval from G1 namespace (oson_knowledge)
@@ -1311,6 +1406,10 @@ class EnhancedRAGPipeline:
                         must=list((admin_filter.must if admin_filter and admin_filter.must else [])),
                         should=should,
                     )
+
+            if industry_code:
+                extra = [FieldCondition(key="industry_code", match=MatchValue(value=str(industry_code)))]
+                admin_filter = Filter(must=list((admin_filter.must if admin_filter and admin_filter.must else [])) + extra)
             
             try:
                 admin_points = []
@@ -1380,7 +1479,10 @@ class EnhancedRAGPipeline:
                     results["admin_law"].append({
                         "source": "qdrant_admin",
                         "score": point.score,
+                        "chunk_id": payload.get("chunk_id") or getattr(point, "id", None),
                         "file_id": payload.get("file_id"),
+                        "stored_file_id": payload.get("stored_file_id"),
+                        "kb_file_id": payload.get("kb_file_id"),
                         "chunk_index": payload.get("chunk_index"),
                         "filename": filename,
                         "scope": payload.get("scope"),
@@ -1396,6 +1498,10 @@ class EnhancedRAGPipeline:
                         "isa_reference": payload.get("isa_reference", []),
                         "ifrs_reference": payload.get("ifrs_reference", []),
                         "cycle": payload.get("cycle"),
+                        "industry_code": payload.get("industry_code"),
+                        "lang": payload.get("lang"),
+                        "char_start": payload.get("char_start"),
+                        "char_end": payload.get("char_end"),
                     })
             except Exception as e:
                 logger.error(f"ADMIN_LAW retrieval failed: {e}")
@@ -1497,7 +1603,7 @@ class EnhancedRAGPipeline:
                                 final_filename = hydrated_filename or r.filename
                                 results["customer_docs"].append({
                                     "source": "fts_customer",
-                                    "score": float(min_similarity) + (0.01 * max(0, (retrieval_top_k - i))),
+                                    "score": float(min_similarity) + (0.001 * max(0, (retrieval_top_k - i))),
                                     "file_id": r.file_id,
                                     "chunk_index": r.chunk_index,
                                     "filename": final_filename,
@@ -1532,7 +1638,10 @@ class EnhancedRAGPipeline:
                         results["customer_docs"].append({
                             "source": "qdrant_customer",
                             "score": point.score,
+                            "chunk_id": payload.get("chunk_id") or getattr(point, "id", None),
                             "file_id": payload.get("file_id"),
+                            "stored_file_id": payload.get("stored_file_id"),
+                            "kb_file_id": payload.get("kb_file_id"),
                             "chunk_index": payload.get("chunk_index"),
                             "filename": filename,
                             "scope": payload.get("scope"),
@@ -1548,6 +1657,10 @@ class EnhancedRAGPipeline:
                             "isa_reference": payload.get("isa_reference", []),
                             "ifrs_reference": payload.get("ifrs_reference", []),
                             "cycle": payload.get("cycle"),
+                            "industry_code": payload.get("industry_code"),
+                            "lang": payload.get("lang"),
+                            "char_start": payload.get("char_start"),
+                            "char_end": payload.get("char_end"),
                         })
 
                     if plan.intent == IntentClass.CONTRACT_STRUCTURE and self.db is not None:
@@ -1863,6 +1976,8 @@ class EnhancedRAGPipeline:
         top_k = int(getattr(settings, "MIXEDBREAD_RERANK_TOP_K", 5) or 5)
         if plan.intent == IntentClass.CONTRACT_STRUCTURE:
             top_k = max(top_k, 15)
+        elif plan.intent == IntentClass.DOC_QA:
+            top_k = max(top_k, 15)
 
         if not getattr(settings, "RAG_RERANK_ENABLED", True):
             logger.info(
@@ -1902,7 +2017,7 @@ class EnhancedRAGPipeline:
             logger.warning("Mixedbread rerank failed; falling back: %s", e)
             return candidates[: min(top_k, len(candidates))]
     
-    def _build_evidence_pack(self, ranked_evidence: List[Dict[str, Any]], plan: QueryPlan) -> Dict[str, Any]:
+    def _build_evidence_pack(self, ranked_evidence: List[Dict[str, Any]], plan: QueryPlan, question: str) -> Dict[str, Any]:
         """
         Build evidence pack with neighbors and citations.
         """
@@ -1918,8 +2033,22 @@ class EnhancedRAGPipeline:
         top_k = int(getattr(settings, "MIXEDBREAD_RERANK_TOP_K", 5) or 5)
         if plan.intent == IntentClass.CONTRACT_STRUCTURE:
             top_k = max(top_k, 15)
+        elif plan.intent == IntentClass.DOC_QA:
+            top_k = max(top_k, 15)
         for i, ev in enumerate(ranked_evidence[:top_k]):
             citation_label = f"[{i + 1}]"
+
+            kb_file_id: str | None = None
+            try:
+                kb_file_id_raw = ev.get("kb_file_id")
+                if isinstance(kb_file_id_raw, str) and kb_file_id_raw.strip():
+                    kb_file_id = kb_file_id_raw.strip()
+                else:
+                    file_id_raw = ev.get("file_id")
+                    if isinstance(file_id_raw, str) and re.match(r"^[A-F]\d+", file_id_raw.strip()):
+                        kb_file_id = file_id_raw.strip()
+            except Exception:
+                kb_file_id = None
             
             evidence_item = {
                 "rank": i + 1,
@@ -1929,8 +2058,26 @@ class EnhancedRAGPipeline:
                 "score": ev.get("score", 0.0),
                 "citation": citation_label,
                 "text": ev.get("text", ""),
+                "excerpt": self._evidence_snippet(str(ev.get("text") or ""), question, max_len=900),
+                "chunk_id": ev.get("chunk_id"),
                 "file_id": ev.get("file_id"),
+                "stored_file_id": ev.get("stored_file_id") or ev.get("file_id"),
                 "chunk_index": ev.get("chunk_index"),
+                "filename": ev.get("filename"),
+                "scope": ev.get("scope"),
+                "customer_id": ev.get("customer_id"),
+                "owner_id": ev.get("owner_id"),
+                "kb_file_id": kb_file_id,
+                "block": ev.get("block"),
+                "section": ev.get("section"),
+                "section_level": ev.get("section_level"),
+                "isa_reference": ev.get("isa_reference", []),
+                "ifrs_reference": ev.get("ifrs_reference", []),
+                "cycle": ev.get("cycle"),
+                "industry_code": ev.get("industry_code"),
+                "lang": ev.get("lang"),
+                "char_start": ev.get("char_start"),
+                "char_end": ev.get("char_end"),
             }
             
             evidence_pack["evidence"].append(evidence_item)
@@ -1950,6 +2097,9 @@ class EnhancedRAGPipeline:
         t = (text or "").strip()
         if not t:
             return ""
+
+        if len(t) <= max_len:
+            return t
 
         q = (question or "").lower()
         tl = t.lower()
@@ -1977,12 +2127,86 @@ class EnhancedRAGPipeline:
                 break
 
         if hit < 0:
-            return t[:max_len]
+            half = max(1, int(max_len / 2))
+            head = t[:half].rstrip()
+            tail = t[-half:].lstrip()
+            return head + "\n...\n" + tail
 
         start = max(0, hit - 200)
         end = min(len(t), start + max_len)
-        snippet = t[start:end]
+
+        if start == 0 and end < len(t):
+            half = max(1, int(max_len / 2))
+            head = t[:half].rstrip()
+            tail = t[-half:].lstrip()
+            return head + "\n...\n" + tail
+
+        if start > 0:
+            ws_start = max(t.rfind("\n", 0, start), t.rfind(" ", 0, start))
+            if ws_start >= 0:
+                start = ws_start + 1
+        if end < len(t):
+            ws_end = max(t.rfind("\n", start, end), t.rfind(" ", start, end))
+            if ws_end > start + 50:
+                end = ws_end
+
+        snippet = t[start:end].strip()
         return ("…" if start > 0 else "") + snippet + ("…" if end < len(t) else "")
+
+    def _extract_pipe_numbered_items(self, evidence: Any) -> list[dict[str, Any]]:
+        if not isinstance(evidence, list):
+            return []
+
+        found: dict[int, dict[str, Any]] = {}
+        for ev in evidence:
+            if not isinstance(ev, dict):
+                continue
+            text = ev.get("text")
+            if not isinstance(text, str) or not text.strip():
+                continue
+            citation = str(ev.get("citation") or "").strip()
+            if not citation:
+                continue
+
+            tl = text.lower()
+            header = ("№ |" in text) or ("наименование работ" in tl)
+
+            matches = list(re.finditer(r"(?<!\d)(\d{1,3})\s*\|\s*", text))
+            if not matches:
+                continue
+
+            for i, m in enumerate(matches):
+                try:
+                    n = int(m.group(1))
+                except Exception:
+                    continue
+                if n <= 0 or n > 500:
+                    continue
+
+                start = m.end()
+                end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+                item_text = (text[start:end] or "").strip()
+                if not item_text:
+                    continue
+                item_text = " ".join(item_text.split())
+
+                prev = found.get(n)
+                if prev is None or (not bool(prev.get("header")) and header):
+                    found[n] = {
+                        "n": n,
+                        "text": item_text,
+                        "citation": citation,
+                        "header": bool(header),
+                    }
+
+        if not found:
+            return []
+
+        items = [found[k] for k in sorted(found.keys())]
+        for x in items:
+            if isinstance(x.get("text"), str) and len(x["text"]) > 360:
+                x["text"] = x["text"][:360].rstrip()
+        return items
     
     def _assemble_prompt(
         self,
@@ -2057,6 +2281,15 @@ Contract signatories questions (when user asks who signed / who is general direc
 - Add 'Следующие действия' (2-4 bullets).
 """)
 
+        if plan.intent == IntentClass.DOC_QA:
+            prompt_parts.append("""
+Document QA questions (when user asks to list works/items from a document):
+- If 'EXTRACTED LIST ITEMS (DETERMINISTIC)' is present, treat it as authoritative.
+- Do not omit items from that list.
+- Each listed item must cite the citation label that contains that item.
+- Do not claim a total count that contradicts the extracted items.
+""")
+
         if tool_outputs:
             prompt_parts.append("\n=== TOOL OUTPUT (DETERMINISTIC) ===")
             prompt_parts.append(json.dumps(tool_outputs, ensure_ascii=False, indent=2))
@@ -2074,7 +2307,7 @@ Contract signatories questions (when user asks who signed / who is general direc
                 prompt_parts.append(f"{role}: {turn['content']}")
         
         # 5. Chat Memories (if available)
-        if conversation_state["chat_memories"]:
+        if getattr(settings, "RAG_CHAT_MEMORY_IN_PROMPT", False) and conversation_state["chat_memories"]:
             prompt_parts.append("\n=== RELATED CONVERSATIONS ===")
             for memory in conversation_state["chat_memories"][:3]:
                 prompt_parts.append(f"- {memory.get('summary', 'Related topic')}")
@@ -2094,10 +2327,24 @@ Contract signatories questions (when user asks who signed / who is general direc
         # 6. Evidence Pack
         prompt_parts.append("\n=== EVIDENCE ===")
         prompt_parts.append(f"Found {len(evidence_pack['evidence'])} relevant pieces of evidence:")
-        
+
         max_ev_for_prompt = 10
-        if plan.intent == IntentClass.CONTRACT_STRUCTURE:
+        if plan.intent == IntentClass.CONTRACT_STRUCTURE or plan.intent == IntentClass.DOC_QA:
             max_ev_for_prompt = 20
+
+        if plan.intent == IntentClass.DOC_QA:
+            extracted = self._extract_pipe_numbered_items(evidence_pack.get("evidence"))
+            if extracted:
+                prompt_parts.append("\n=== EXTRACTED LIST ITEMS (DETERMINISTIC) ===")
+                nums = [int(x.get("n")) for x in extracted if isinstance(x.get("n"), int)]
+                nums = sorted(set(nums))
+                prompt_parts.append(f"Detected {len(nums)} items: {', '.join(str(n) for n in nums[:50])}")
+                for x in extracted[:50]:
+                    n = x.get("n")
+                    txt = (x.get("text") or "").strip()
+                    cit = (x.get("citation") or "").strip()
+                    if n and txt and cit:
+                        prompt_parts.append(f"{n} | {txt} | {cit}")
 
         for i, ev in enumerate(evidence_pack["evidence"][:max_ev_for_prompt]):
             prompt_parts.append(f"\n{i+1}. [{ev['trust_level'].upper()}] {ev['citation']}")

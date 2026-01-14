@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.modules.chats.models import Chat, ChatMessage, SenderType
 from app.modules.rag.service import RAGService
 from app.core.logging import get_logger
+from app.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -141,12 +142,14 @@ class ChatService:
         # 2. Collect 3-layer context
         rolling_summary = self.get_rolling_summary(chat_id)
         last_turns = self.get_chat_context(chat_id, message_limit=4)
-        chat_memories = self.get_relevant_chat_memories(
-            query=user_message,
-            customer_id=customer_id,
-            current_chat_id=chat_id,
-            limit=3,
-        )
+        chat_memories: List[Dict[str, Any]] = []
+        if getattr(settings, "RAG_CHAT_MEMORY_IN_PROMPT", False):
+            chat_memories = self.get_relevant_chat_memories(
+                query=user_message,
+                customer_id=customer_id,
+                current_chat_id=chat_id,
+                limit=3,
+            )
         
         # 3. Execute RAG query
         try:
@@ -241,6 +244,7 @@ class ChatService:
                 "created_at": assistant_msg.created_at.isoformat(),
             },
             "rag_context": rag_result.get("context", []),
+            "citations": rag_result.get("context", []),
             "sources_used": rag_result.get("sources_used", []),
             "intent": (
                 (rag_result.get("processing_metadata") or {}).get("intent")
