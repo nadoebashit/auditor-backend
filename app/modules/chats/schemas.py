@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.chats.models import SenderType
 
@@ -19,8 +19,7 @@ class ChatBase(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChatMessageCreate(BaseModel):
@@ -34,12 +33,12 @@ class ChatMessageBase(BaseModel):
     sender_id: UUID | None
     role: str
     content: str
+    sources: list[dict] | None = None
+    files_used: list[str] = Field(default_factory=list, description="List of file IDs used in RAG")
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChatWithMessages(ChatBase):
     messages: list[ChatMessageBase]
-

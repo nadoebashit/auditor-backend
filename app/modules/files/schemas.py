@@ -1,7 +1,10 @@
 from enum import Enum
 from typing import Optional
+from datetime import date
 
-from pydantic import BaseModel
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
 
 
 class FileScope(str, Enum):
@@ -9,17 +12,29 @@ class FileScope(str, Enum):
     CUSTOMER_DOC = "CUSTOMER_DOC"
 
 
+class FileIndexStatus(str, Enum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    ERROR = "ERROR"
+
+
 class FileUploadResponse(BaseModel):
-    id: str
+    id: UUID
     scope: FileScope
     customer_id: Optional[str] = None
     bucket: str
     object_key: str
     original_filename: str
+    title: Optional[str] = None
+    version_date: Optional[date] = None
+    language: Optional[str] = None
+    description: Optional[str] = None
     is_indexed: bool
+    index_status: Optional[FileIndexStatus] = None
+    index_error: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FileInfo(FileUploadResponse):
@@ -30,6 +45,43 @@ class FileInfo(FileUploadResponse):
 class FileListResponse(BaseModel):
     items: list[FileInfo]
     total: int
+
+
+class FileStatusResponse(BaseModel):
+    id: str
+    scope: FileScope
+    customer_id: Optional[str] = None
+    original_filename: str
+    title: Optional[str] = None
+    version_date: Optional[date] = None
+    language: Optional[str] = None
+    description: Optional[str] = None
+    is_indexed: bool
+    index_status: Optional[FileIndexStatus] = None
+    index_error: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+    
+    @classmethod
+    def model_validate(cls, obj, *, strict=None, from_attributes=None, context=None):
+        """Override to convert UUID id to string."""
+        if hasattr(obj, 'id') and hasattr(obj.id, '__str__'):
+            # Create a dict with id as string
+            data = {
+                "id": str(obj.id),
+                "scope": obj.scope,
+                "customer_id": obj.customer_id,
+                "original_filename": obj.original_filename,
+                "title": getattr(obj, "title", None),
+                "version_date": getattr(obj, "version_date", None),
+                "language": getattr(obj, "language", None),
+                "description": getattr(obj, "description", None),
+                "is_indexed": obj.is_indexed,
+                "index_status": obj.index_status,
+                "index_error": obj.index_error,
+            }
+            return cls(**data)
+        return super().model_validate(obj, strict=strict, from_attributes=from_attributes, context=context)
 
 
 class ChunkSearchResult(BaseModel):
@@ -45,6 +97,4 @@ class ChunkSearchResult(BaseModel):
 
 class ChunkSearchResponse(BaseModel):
     items: list[ChunkSearchResult]
-
     total: int
-

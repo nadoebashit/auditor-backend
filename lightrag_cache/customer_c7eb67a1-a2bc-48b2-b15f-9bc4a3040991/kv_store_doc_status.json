@@ -1,0 +1,21 @@
+{
+  "doc-ebbe25ba96b37935914812000fcfe9db": {
+    "status": "processing",
+    "chunks_count": 4,
+    "chunks_list": [
+      "chunk-53ea01ac19e30629af528e0a32f28874",
+      "chunk-8a272104cc428a2f039bc44762d5eb4f",
+      "chunk-ae6411cdc959825dfa2a7d4ac1243ec4",
+      "chunk-d693f3a112f672f51be695c93d7c83c4"
+    ],
+    "content_summary": "АО \"Jusan Bank\"\n050013, Республика Казахстан, г. Алматы, Медеуский район, проспект Н. Назарбаева, д.242\nТелефоны: 58-77-11 (единый номер для 16 городов Казахстана), 8-800-080-25-25 (бесплатный звонок с городских телефонов) БИК: TSESKZKA\nТранзакции по...",
+    "content_length": 7887,
+    "created_at": "2025-12-29T22:13:23.389385+00:00",
+    "updated_at": "2025-12-29T22:25:06.800233+00:00",
+    "file_path": "Выписка_по_карте_Jusan 2.pdf.docx",
+    "track_id": "insert_20251230_031323_8beb5495",
+    "metadata": {
+      "processing_start_time": 1767047106
+    }
+  }
+}

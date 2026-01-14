@@ -2,29 +2,54 @@ from __future__ import annotations
 
 import io
 import uuid
-from typing import List, cast
+from datetime import date
+from typing import List
 
-from qdrant_client.models import Filter, PointStruct, ScoredPoint
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.modules.files.file_text_extractor import extract_text
-from app.modules.files.models import FileChunk, FileScope, StoredFile
-from app.modules.files.qdrant_client import QdrantVectorStore
+from app.modules.files.models import FileIndexStatus, FileScope, StoredFile
 from app.modules.files.storage import FileStorage
+from app.modules.embeddings.service import EmbeddingService, get_embedding_service
 
 logger = get_logger(__name__)
 
 
 class EmbeddingProvider:
-    """Stub embedding provider. Replace with actual model integration."""
+    """
+    Production embedding provider using EmbeddingService.
+    Supports Gemini, OpenAI, and local SentenceTransformers.
+    """
 
-    def __init__(self, vector_size: int):
+    def __init__(self, vector_size: int = 768):
+        # Target vector size (must match Qdrant collection)
         self.vector_size = vector_size
+        self._service: EmbeddingService | None = None
+    
+    def _get_service(self) -> EmbeddingService:
+        """Lazy initialization of embedding service."""
+        if self._service is None:
+            self._service = get_embedding_service()
+        return self._service
+
+    def _adapt(self, embedding: List[float]) -> List[float]:
+        """Pad/truncate embedding to match target vector size."""
+        if len(embedding) == self.vector_size:
+            return embedding
+        if len(embedding) > self.vector_size:
+            return embedding[: self.vector_size]
+        return embedding + [0.0] * (self.vector_size - len(embedding))
 
     def embed(self, text: str) -> List[float]:
-        base = float(len(text) % 13 + 1)
-        return [((i + 1) * base) % 7 for i in range(self.vector_size)]
+        """Embed single text using production embedding service."""
+        service = self._get_service()
+        return self._adapt(service.embed_single(text))
+    
+    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Embed batch of texts efficiently."""
+        service = self._get_service()
+        return [self._adapt(v) for v in service.embed(texts)]
 
 
 def chunk_text(text: str, chunk_size: int = 1500) -> List[str]:
@@ -38,24 +63,41 @@ def chunk_text(text: str, chunk_size: int = 1500) -> List[str]:
 
 
 class FileService:
-    def __init__(
-        self,
-        db: Session,
-        storage: FileStorage,
-        vector_store: QdrantVectorStore,
-        embedding_provider: EmbeddingProvider,
-    ):
+    """
+    File CRUD-only service.
+
+    Responsibilities:
+    - Upload files to object storage (MinIO/S3)
+    - Create and query StoredFile records in Postgres
+
+    Non-responsibilities (moved elsewhere):
+    - Indexing/chunking/embeddings/vector DB (Qdrant/LightRAG)
+    - Semantic search
+    """
+
+    def __init__(self, db: Session, storage: FileStorage):
         self.db = db
         self.storage = storage
-        self.vector_store = vector_store
-        self.embedding_provider = embedding_provider
 
-    def upload_admin_file(self, user, file) -> StoredFile:
+    def upload_admin_file(
+        self,
+        user,
+        file,
+        *,
+        title: str | None = None,
+        version_date: date | None = None,
+        language: str | None = None,
+        description: str | None = None,
+    ) -> StoredFile:
+        """
+        Upload an admin (law/standard) file and create a StoredFile record.
+        Indexing is handled asynchronously by a worker (Arq) after the upload.
+        """
         logger.info(
             "Uploading admin file",
             extra={
                 "user_id": str(user.id),
-                "file_name": file.filename,
+                "original_filename": file.filename,
                 "content_type": file.content_type,
             },
         )
@@ -69,8 +111,6 @@ class FileService:
             content_type=file.content_type,
         )
 
-        from app.modules.files.models import FileIndexStatus
-
         stored_file = StoredFile(
             owner_id=user.id,
             customer_id=None,
@@ -80,16 +120,21 @@ class FileService:
             original_filename=file.filename,
             content_type=file.content_type,
             size_bytes=len(content),
+            title=title,
+            version_date=version_date,
+            language=language,
+            description=description,
             is_indexed=False,
             index_error=None,
             index_status=FileIndexStatus.QUEUED,
         )
+
         self.db.add(stored_file)
         self.db.commit()
         self.db.refresh(stored_file)
 
         logger.info(
-            "Admin file stored metadata saved",
+            "Admin file stored",
             extra={
                 "stored_file_id": str(stored_file.id),
                 "bucket": stored_file.bucket,
@@ -98,16 +143,19 @@ class FileService:
             },
         )
 
-        # ВАЖНО: больше не вызываем self.index_file здесь!
         return stored_file
 
     def upload_customer_file(self, user, customer_id: str, file) -> StoredFile:
+        """
+        Upload a customer document and create a StoredFile record.
+        Indexing is handled asynchronously by a worker (Arq) after the upload.
+        """
         logger.info(
             "Uploading customer file",
             extra={
                 "user_id": str(user.id),
                 "customer_id": customer_id,
-                "file_name": file.filename,
+                "original_filename": file.filename,
                 "content_type": file.content_type,
             },
         )
@@ -122,8 +170,6 @@ class FileService:
             content_type=file.content_type,
         )
 
-        from app.modules.files.models import FileIndexStatus
-
         stored_file = StoredFile(
             owner_id=user.id,
             customer_id=customer_id,
@@ -137,12 +183,13 @@ class FileService:
             index_error=None,
             index_status=FileIndexStatus.QUEUED,
         )
+
         self.db.add(stored_file)
         self.db.commit()
         self.db.refresh(stored_file)
 
         logger.info(
-            "Customer file stored metadata saved",
+            "Customer file stored",
             extra={
                 "stored_file_id": str(stored_file.id),
                 "customer_id": customer_id,
@@ -152,7 +199,6 @@ class FileService:
             },
         )
 
-        # Индексация делается асинхронно воркером Arq
         return stored_file
 
     def list_admin_files(self, search: str | None = None) -> List[StoredFile]:
@@ -160,7 +206,15 @@ class FileService:
             StoredFile.scope == FileScope.ADMIN_LAW
         )
         if search:
-            query = query.filter(StoredFile.original_filename.ilike(f"%{search}%"))
+            like = f"%{search}%"
+            query = query.filter(
+                or_(
+                    StoredFile.original_filename.ilike(like),
+                    StoredFile.title.ilike(like),
+                    StoredFile.description.ilike(like),
+                    StoredFile.language.ilike(like),
+                )
+            )
         return query.order_by(StoredFile.uploaded_at.desc()).all()
 
     def list_customer_files(
@@ -296,7 +350,7 @@ class FileService:
             )
 
         except Exception as exc:  # pragma: no cover - network bound
-            logger.error(
+            logger.exception(
                 "File indexing failed",
                 extra={
                     "stored_file_id": str(stored_file.id),
@@ -307,81 +361,79 @@ class FileService:
             stored_file.index_error = str(exc)
             self.db.commit()
 
-        def search_chunks(
-            self,
-            query: str,
-            limit: int = 5,
-            scope: FileScope | None = None,
-            customer_id: str | None = None,
-            owner_id: str | None = None,
-        ) -> list[dict[str, Any]]:
-            """
-            Выполнить семантический поиск по индексированным чанкам файлов.
+    def search_chunks(
+        self,
+        query: str,
+        limit: int = 5,
+        scope: FileScope | None = None,
+        customer_id: str | None = None,
+        owner_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Выполнить семантический поиск по индексированным чанкам файлов.
 
-            - query: текст запроса
-            - limit: максимальное количество результатов
-            - scope: ADMIN_LAW / CUSTOMER_DOC (ограничить поиск по типу файла)
-            - customer_id: ограничить поиск по заказчику
-            - owner_id: ограничить поиск по владельцу (для сотрудников)
-            """
-            # 1. Эмбеддинг запроса
-            query_vector = self.embedding_provider.embed(query)
+        - query: текст запроса
+        - limit: максимальное количество результатов
+        - scope: ADMIN_LAW / CUSTOMER_DOC (ограничить поиск по типу файла)
+        - customer_id: ограничить поиск по заказчику
+        - owner_id: ограничить поиск по владельцу (для сотрудников)
+        """
+        # 1. Эмбеддинг запроса
+        query_vector = self.embedding_provider.embed(query)
 
-            # 2. Фильтр по payload
-            q_filter: Filter | None = self.vector_store.build_filter(
-                scope=scope.value if scope else None,
-                customer_id=customer_id,
-                owner_id=str(owner_id) if owner_id is not None else None,
+        # 2. Фильтр по payload
+        q_filter: Filter | None = self.vector_store.build_filter(
+            scope=scope.value if scope else None,
+            customer_id=customer_id,
+            owner_id=str(owner_id) if owner_id is not None else None,
+        )
+
+        # 3. Поиск в Qdrant
+        points: list[ScoredPoint] = self.vector_store.search(
+            query_vector=query_vector,
+            limit=limit,
+            filter_=q_filter,
+        )
+
+        if not points:
+            return []
+
+        # 4. Подтягиваем чанки и файлы из БД
+        results: list[dict[str, Any]] = []
+
+        for point in points:
+            payload = point.payload or {}
+            file_id = payload.get("file_id")
+            chunk_index = payload.get("chunk_index")
+
+            if not file_id:
+                continue
+
+            chunk = (
+                self.db.query(FileChunk)
+                .filter(
+                    FileChunk.file_id == file_id,
+                    FileChunk.chunk_index == chunk_index,
+                )
+                .first()
+            )
+            if not chunk:
+                continue
+
+            stored_file = self.db.query(StoredFile).get(file_id)
+
+            results.append(
+                {
+                    "score": point.score,
+                    "file_id": file_id,
+                    "chunk_index": chunk_index,
+                    "text": chunk.text,
+                    "filename": stored_file.original_filename if stored_file else None,
+                    "scope": payload.get("scope"),
+                    "customer_id": payload.get("customer_id"),
+                    "owner_id": payload.get("owner_id"),
+                }
             )
 
-            # 3. Поиск в Qdrant
-            points: list[ScoredPoint] = self.vector_store.search(
-                query_vector=query_vector,
-                limit=limit,
-                filter_=q_filter,
-            )
-
-            if not points:
-                return []
-
-            # 4. Подтягиваем чанки и файлы из БД
-            results: list[dict[str, Any]] = []
-
-            for point in points:
-                payload = point.payload or {}
-                file_id = payload.get("file_id")
-                chunk_index = payload.get("chunk_index")
-
-                if not file_id:
-                    continue
-
-                chunk = (
-                    self.db.query(FileChunk)
-                    .filter(
-                        FileChunk.file_id == file_id,
-                        FileChunk.chunk_index == chunk_index,
-                    )
-                    .first()
-                )
-                if not chunk:
-                    continue
-
-                stored_file = self.db.query(StoredFile).get(file_id)
-
-                results.append(
-                    {
-                        "score": point.score,
-                        "file_id": file_id,
-                        "chunk_index": chunk_index,
-                        "text": chunk.text,
-                        "filename": stored_file.original_filename
-                        if stored_file
-                        else None,
-                        "scope": payload.get("scope"),
-                        "customer_id": payload.get("customer_id"),
-                        "owner_id": payload.get("owner_id"),
-                    }
-                )
-
-            return results
+        return results
 

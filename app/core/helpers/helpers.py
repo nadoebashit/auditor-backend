@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from arq.connections import ArqRedis, RedisSettings, create_pool
+from arq.connections import create_pool, ArqRedis, RedisSettings
 
 from app.core.config import settings
 
@@ -19,9 +19,6 @@ async def get_arq_redis() -> ArqRedis:
     global _redis_pool
 
     if _redis_pool is None:
-        # settings.REDIS_URL — это AnyUrl из Pydantic, Arq ожидает либо строку,
-        # либо RedisSettings. Приводим к строке и создаём RedisSettings.
-        redis_settings = RedisSettings.from_dsn(str(settings.REDIS_URL))
-        _redis_pool = await create_pool(redis_settings)
+        _redis_pool = await create_pool(RedisSettings.from_dsn(str(settings.REDIS_URL)))
     return _redis_pool
 

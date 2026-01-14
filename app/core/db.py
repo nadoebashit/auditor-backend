@@ -15,6 +15,14 @@ class Base(DeclarativeBase):
     pass
 
 
+def _import_models():
+    """Import all models to register them with Base.metadata.
+    
+    This is called lazily to avoid circular imports.
+    """
+    import app.models  # noqa: F401
+
+
 def _create_engine():
     """Create a SQLAlchemy engine with UTF-8 enforced.
 
@@ -25,8 +33,10 @@ def _create_engine():
     """
 
     try:
+        # Convert PostgresDsn to string for SQLAlchemy
+        database_url = str(settings.DATABASE_URL)
         return create_engine(
-            settings.DATABASE_URL,
+            str(settings.DATABASE_URL),
             pool_pre_ping=True,
             connect_args={"client_encoding": "utf8"},
         )
@@ -47,5 +57,11 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise
     finally:
         db.close()

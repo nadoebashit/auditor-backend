@@ -13,6 +13,7 @@ from app.modules.auth.schemas import (
     TokenResponse,
     UserBase,
     UserCreateRequest,
+    UserListResponse,
 )
 from app.modules.auth.service import AuthService
 
@@ -162,6 +163,24 @@ def telegram_login(
 
 
 @router.post(
+    "/telegram/auto-login",
+    response_model=TokenResponse,
+    summary="Автоматический вход для сотрудников через Telegram (по telegram_user_id)",
+)
+def telegram_auto_login(
+    telegram_user_id: int, service: AuthService = Depends(_get_auth_service)
+):
+    try:
+        token, _ = service.login_telegram_auto(telegram_user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        )
+    return TokenResponse(access_token=token)
+
+
+@router.post(
     "/admin/users",
     response_model=UserBase,
     summary="Создание сотрудника или администратора",
@@ -178,6 +197,20 @@ def create_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
+
+
+@router.get(
+    "/admin/users",
+    response_model=UserListResponse,
+    summary="Список всех пользователей (только для админов)",
+)
+def list_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    repo = UserRepository(db)
+    users = repo.get_all()
+    return {"items": users, "total": len(users)}
 
 
 @router.post(

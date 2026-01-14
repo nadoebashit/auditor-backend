@@ -1,40 +1,84 @@
 """RAG router with LIGHTRAG endpoints."""
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.db import get_db
+from app.core.logging import get_logger
 from app.modules.auth.router import get_current_user
+from app.modules.auth.models import User
+from app.modules.files.qdrant_client import QdrantVectorStore
+from app.modules.prompts.service import PromptsService
+from app.modules.rag.gemini import GeminiAPI, get_gemini_api
 from app.modules.rag.schemas import (
-    RAGQueryRequest,
-    RAGQueryResponse,
+    RAGDeleteResponse,
+    RAGEvidenceRequest,
+    RAGEvidenceResponse,
+    RAGGraphStatsResponse,
     RAGInsertRequest,
     RAGInsertResponse,
-    RAGDeleteRequest,
-    RAGDeleteResponse,
-    RAGGraphStatsResponse,
+    RAGQueryRequest,
+    RAGQueryResponse,
 )
 from app.modules.rag.service import RAGService
-from app.modules.rag.gemini import GeminiAPI
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
 
-def _get_rag_service() -> RAGService:
-    """Создает экземпляр RAGService."""
-    gemini_api = GeminiAPI()
-    return RAGService(gemini_api=gemini_api)
+def _get_rag_service(db: Session = Depends(get_db)) -> RAGService:
+    """Создает экземпляр RAGService с Qdrant."""
+    from app.core.config import settings
+    from app.modules.files.qdrant_client import QdrantVectorStore
+    
+    gemini_api = get_gemini_api()
+    
+    qdrant_store_admin = None
+    qdrant_store_client = None
+    try:
+        admin_collection = settings.QDRANT_COLLECTION_ADMIN or settings.QDRANT_COLLECTION_NAME
+        client_collection = settings.QDRANT_COLLECTION_CLIENT or settings.QDRANT_COLLECTION_NAME
+
+        qdrant_store_admin = QdrantVectorStore(
+            url=settings.QDRANT_URL,
+            collection_name=admin_collection,
+            vector_size=settings.QDRANT_VECTOR_SIZE,
+        )
+        qdrant_store_client = QdrantVectorStore(
+            url=settings.QDRANT_URL,
+            collection_name=client_collection,
+            vector_size=settings.QDRANT_VECTOR_SIZE,
+        )
+        logger.info(
+            "QdrantVectorStore initialized successfully",
+            extra={
+                "admin_collection": admin_collection,
+                "client_collection": client_collection,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize QdrantVectorStore: {e}")
+
+    return RAGService(
+        db=db,
+        gemini_api=gemini_api,
+        qdrant_store_admin=qdrant_store_admin,
+        qdrant_store_client=qdrant_store_client,
+    )
 
 
 @router.post(
     "/query",
     response_model=RAGQueryResponse,
     summary="Запрос к RAG системе",
-    description="Выполняет запрос к графу знаний LIGHTRAG и возвращает ответ с контекстом",
+    description="Выполняет гибридный RAG-запрос (Qdrant evidence + Gemini) и возвращает ответ с контекстом",
 )
 async def query_rag(
     request: RAGQueryRequest,
     service: RAGService = Depends(_get_rag_service),
-    _=Depends(get_current_user),
+    current_user = Depends(get_current_user),
 ):
     """
     Выполняет запрос к RAG системе.
@@ -44,18 +88,76 @@ async def query_rag(
     - local: Использование локального контекста
     - global: Использование глобального контекста графа
     - hybrid: Комбинация локального и глобального контекста
+    
+    Фильтрация:
+    - customer_id: обязательный параметр для корректной работы
+    - include_admin_laws: включить общие законы и методички
+    - include_customer_docs: включить документы заказчика
     """
+    # Валидация обязательных полей
+    if not request.customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="customer_id is required for RAG queries"
+        )
+    
     try:
-        result = service.query(
+        result = await service.query(
             question=request.question,
+            customer_id=request.customer_id,
+            include_admin_laws=request.include_admin_laws,
+            include_customer_docs=request.include_customer_docs,
+            owner_id=str(current_user.id) if not current_user.is_admin else None,
             mode=request.mode,
             top_k=request.top_k,
+            temperature=request.temperature,
+            tenant_id=str(request.customer_id) if request.customer_id else None,
+            user_id=str(getattr(current_user, "id", None)) if getattr(current_user, "id", None) else None,
         )
         return RAGQueryResponse(**result)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error querying RAG: {str(e)}",
+        )
+
+
+@router.post(
+    "/evidence",
+    response_model=RAGEvidenceResponse,
+    summary="RAG: retrieval-only (без генерации)",
+    description="Делает только retrieval (Qdrant/LightRAG) и возвращает контекст без вызова LLM",
+)
+async def rag_evidence(
+    request: RAGEvidenceRequest,
+    service: RAGService = Depends(_get_rag_service),
+    user: User = Depends(get_current_user),
+):
+    """
+    Retrieval-only endpoint для отладки и трассируемости.
+    """
+    try:
+        owner_id = None if getattr(user, "is_admin", False) else str(user.id)
+        if owner_id is not None and request.include_admin_laws:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: employees cannot query admin laws",
+            )
+
+        result = await service.evidence(
+            question=request.question,
+            mode=request.mode,
+            top_k=request.top_k,
+            customer_id=request.customer_id,
+            include_admin_laws=request.include_admin_laws,
+            include_customer_docs=request.include_customer_docs,
+            owner_id=owner_id,
+        )
+        return RAGEvidenceResponse(**result)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving evidence: {str(e)}",
         )
 
 
@@ -126,4 +228,3 @@ async def get_rag_stats(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting stats: {str(e)}",
         )
-

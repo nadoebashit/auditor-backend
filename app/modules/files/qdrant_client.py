@@ -9,6 +9,7 @@ from qdrant_client.models import (
     Filter,
     MatchValue,
     PointStruct,
+    Range,
     ScoredPoint,
     VectorParams,
 )
@@ -36,6 +37,10 @@ class QdrantVectorStore:
 
         self._ensure_collection()
 
+    @property
+    def vector_size(self) -> int:
+        return self._vector_size
+
     def _ensure_collection(self) -> None:
         """
         Создаёт коллекцию, если её ещё нет.
@@ -44,6 +49,22 @@ class QdrantVectorStore:
         exists = any(c.name == self._collection_name for c in collections.collections)
 
         if exists:
+            # Try to read actual vector size from Qdrant (collection could have been created earlier)
+            try:
+                info = self._client.get_collection(self._collection_name)
+                # qdrant-client response shapes vary between versions; keep it defensive
+                actual_size = None
+                try:
+                    actual_size = info.config.params.vectors.size  # type: ignore[attr-defined]
+                except Exception:
+                    try:
+                        actual_size = info.config.params.vectors["size"]  # type: ignore[index]
+                    except Exception:
+                        actual_size = None
+                if isinstance(actual_size, int) and actual_size > 0:
+                    self._vector_size = actual_size
+            except Exception:
+                pass
             logger.info(
                 "Qdrant collection already exists",
                 extra={"collection_name": self._collection_name},
@@ -94,6 +115,8 @@ class QdrantVectorStore:
     ) -> List[ScoredPoint]:
         """
         Ищет ближайшие вектора по query_vector с опциональным фильтром по payload.
+        
+        Использует query_points для новых версий qdrant-client или fallback на старый API.
         """
         logger.info(
             "Searching in Qdrant",
@@ -104,13 +127,30 @@ class QdrantVectorStore:
             },
         )
 
-        results: List[ScoredPoint] = self._client.search(
+        if hasattr(self._client, "search"):
+            results: List[ScoredPoint] = self._client.search(
+                collection_name=self._collection_name,
+                query_vector=query_vector,
+                limit=limit,
+                query_filter=filter_,
+            )
+            return results
+
+        resp = self._client.query_points(
             collection_name=self._collection_name,
-            query_vector=query_vector,
+            query=query_vector,
             limit=limit,
             query_filter=filter_,
+            with_payload=True,
         )
-        return results
+
+        points = getattr(resp, "points", None)
+        if points is None:
+            points = getattr(resp, "result", None)
+        if points is None:
+            points = []
+
+        return list(points)
 
     @staticmethod
     def build_filter(
@@ -161,3 +201,28 @@ class QdrantVectorStore:
 
         return Filter(must=conditions)
 
+    @staticmethod
+    def build_file_chunk_range_filter(
+        *,
+        file_id: str,
+        chunk_start: int,
+        chunk_end: int,
+        scope: str | None = None,
+        customer_id: str | None = None,
+        owner_id: str | None = None,
+    ) -> Filter:
+        """Build filter for fetching neighbor chunks within one file."""
+        conditions: list[FieldCondition] = [
+            FieldCondition(key="file_id", match=MatchValue(value=file_id)),
+            FieldCondition(key="chunk_index", range=Range(gte=int(chunk_start), lte=int(chunk_end))),
+        ]
+
+        base = QdrantVectorStore.build_filter(
+            scope=scope,
+            customer_id=customer_id,
+            owner_id=owner_id,
+        )
+        if base is not None:
+            conditions.extend(list(base.must or []))
+
+        return Filter(must=conditions)

@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     String,
     Text,
+    JSON,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -68,6 +69,9 @@ class ChatMessage(Base):
     # роль в терминах LLM
     role = Column(String, nullable=False, default="user")  # user/assistant/system
     content = Column(Text, nullable=False)
+
+    # Files used in RAG response
+    files_used = Column(JSON, nullable=True, default=list)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

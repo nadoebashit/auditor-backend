@@ -1,0 +1,50 @@
+{
+  "doc-ebbe25ba96b37935914812000fcfe9db": {
+    "status": "failed",
+    "error_msg": "C[1/4]: chunk-53ea01ac19e30629af528e0a32f28874: ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\\nPlease retry in 59.206683027s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '59s'}]}} (Original exception could not be reconstructed: APIError.__init__() missing 1 required positional argument: 'response_json')",
+    "content_summary": "АО \"Jusan Bank\"\n050013, Республика Казахстан, г. Алматы, Медеуский район, проспект Н. Назарбаева, д.242\nТелефоны: 58-77-11 (единый номер для 16 городов Казахстана), 8-800-080-25-25 (бесплатный звонок с городских телефонов) БИК: TSESKZKA\nТранзакции по...",
+    "content_length": 7887,
+    "created_at": "2025-12-29T21:29:04.440657+00:00",
+    "updated_at": "2025-12-29T22:05:01.233081+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251230_022904_3ae2b9d9",
+    "metadata": {
+      "processing_start_time": 1767045538,
+      "processing_end_time": 1767045901
+    },
+    "chunks_list": []
+  },
+  "doc-e512b511af1b91f1a261450e61d12553": {
+    "status": "failed",
+    "error_msg": "C[1/1]: chunk-e512b511af1b91f1a261450e61d12553: ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/usage?tab=rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\\nPlease retry in 59.126348388s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'model': 'gemini-2.5-flash', 'location': 'global'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '59s'}]}} (Original exception could not be reconstructed: APIError.__init__() missing 1 required positional argument: 'response_json')",
+    "content_summary": "Дополнительное соглашение к договору № __________ от \"___\" __________ 2025 г.\n_____________________\nЮРИДИЧЕСКИЕ АДРЕСА И РЕКВИЗИТЫ СТОРОН\n№ | Перечень анализов | Стоимость для партнера | Срок выполнения\n1 | HbsAg (гепатит В) | 900 | 1 рабочий день\n2 ...",
+    "content_length": 982,
+    "created_at": "2025-12-29T21:34:26.304380+00:00",
+    "updated_at": "2025-12-29T22:11:01.453743+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251230_023426_eeff8a82",
+    "metadata": {
+      "processing_start_time": 1767045901,
+      "processing_end_time": 1767046261
+    },
+    "chunks_list": []
+  },
+  "doc-271985ceba6c074e586cadcaa38b8216": {
+    "status": "processing",
+    "chunks_count": 3,
+    "chunks_list": [
+      "chunk-f7aec9d2b65073db5e941a6377a2bcc0",
+      "chunk-7274b527579a80889c9f02af4a4feaeb",
+      "chunk-0964f6f1f75a9cb2b9a54c847051b376"
+    ],
+    "content_summary": "АКТ ВЫПОЛНЕННЫХ РАБОТ № __ по Договору № __ от «__» _______ 2024 г. г. Астана\n«__» _________ 2025 г. ТОО «Геном плюс», именуемое в дальнейшем «Заказчик», в лице Генерального директора Абдирасиловой Д.Д., действующей на основании Устава, с одной сторо...",
+    "content_length": 6209,
+    "created_at": "2025-12-29T21:58:58.906887+00:00",
+    "updated_at": "2025-12-29T22:11:01.818442+00:00",
+    "file_path": "unknown_source",
+    "track_id": "insert_20251230_025858_c1fe7d3c",
+    "metadata": {
+      "processing_start_time": 1767046261
+    }
+  }
+}
