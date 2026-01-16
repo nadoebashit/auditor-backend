@@ -17,6 +17,7 @@ RUN pip install --upgrade pip
 # Копирование файлов зависимостей
 COPY requirements.txt .
 
+COPY LightRAG ./LightRAG
 # Установка Python зависимостей
 RUN pip install --no-cache-dir --upgrade -r requirements.txt --use-deprecated=legacy-resolver
 

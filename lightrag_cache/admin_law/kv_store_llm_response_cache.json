@@ -398,5 +398,205 @@
     "create_time": 1768320350,
     "update_time": 1768320350,
     "_id": "hybrid:keywords:d4d4fa368ad874599e860e239f158419"
+  },
+  "hybrid:keywords:ead357a53804f0cc76ae13101c420b64": {
+    "return": "{\"high_level_keywords\": [\"File description\", \"Contract document\", \"Medical services agreement\"], \"low_level_keywords\": [\"\\u0414\\u043e\\u0433\\u043e\\u0432\\u043e\\u0440 Medical \\u0410\\u0441\\u0442\\u0430\\u043d\\u0430.docx\", \"Medical\", \"\\u0410\\u0441\\u0442\\u0430\\u043d\\u0430\", \"DOCX file\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "про что это файл ? Договор Medical Астана.docx",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768507565,
+    "update_time": 1768507565,
+    "_id": "hybrid:keywords:ead357a53804f0cc76ae13101c420b64"
+  },
+  "hybrid:keywords:0dedef6ad1f8e2edbaddb3e8d60ad116": {
+    "return": "{\"high_level_keywords\": [\"File identification\", \"Project checklist\", \"Project deadlines\"], \"low_level_keywords\": [\"\\u0427\\u0435\\u043a\\u043b\\u0438\\u0441\\u0442_\\u043f\\u0440\\u043e\\u0435\\u043a\\u0442\\u0430_\\u0441_\\u0441\\u0440\\u043e\\u043a\\u0430\\u043c\\u0438.xlsx\", \"XLSX file\", \"Checklist\", \"Project deadlines\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "что это за файл Чеклист_проекта_с_сроками.xlsx",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768507790,
+    "update_time": 1768507790,
+    "_id": "hybrid:keywords:0dedef6ad1f8e2edbaddb3e8d60ad116"
+  },
+  "hybrid:keywords:e54d47c3e561cdadbf489cc87da80406": {
+    "return": "{\"high_level_keywords\": [\"Coursera document\", \"PDF file\", \"Document recipient\"], \"low_level_keywords\": [\"Coursera\", \"L9XUBHFH97JM.pdf\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Coursera L9XUBHFH97JM.pdf   кто его получил?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768507885,
+    "update_time": 1768507885,
+    "_id": "hybrid:keywords:e54d47c3e561cdadbf489cc87da80406"
+  },
+  "hybrid:keywords:059a85221c5fe315e058a7c1a184beb5": {
+    "return": "{\"high_level_keywords\": [\"Image description\", \"Photo content identification\"], \"low_level_keywords\": [\"photo_4_2025-08-16_22-06-09.jpg\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "привет что изображено на этом фото photo_4_2025-08-16_22-06-09.jpg",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768514955,
+    "update_time": 1768514955,
+    "_id": "hybrid:keywords:059a85221c5fe315e058a7c1a184beb5"
+  },
+  "hybrid:keywords:f46ab17452659f4bc6ebd2ceffe9ff26": {
+    "return": "{\"high_level_keywords\": [\"Company details\", \"Document contents\", \"Business requisites\"], \"low_level_keywords\": [\"NEU Ltd\", \"Requisites\", \"PDF document\", \"\\u0420\\u0435\\u043a\\u0432\\u0438\\u0437\\u0438\\u0442\\u044b NEU Ltd.pdf\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Реквизиты NEU Ltd.pdf  что здесь указано?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768515025,
+    "update_time": 1768515025,
+    "_id": "hybrid:keywords:f46ab17452659f4bc6ebd2ceffe9ff26"
+  },
+  "hybrid:keywords:cf7f4e5a7e5335303a2beab4430fbc44": {
+    "return": "{\"high_level_keywords\": [\"Project checklist\", \"Deadlines\", \"File content inquiry\"], \"low_level_keywords\": [\"\\u0427\\u0435\\u043a\\u043b\\u0438\\u0441\\u0442_\\u043f\\u0440\\u043e\\u0435\\u043a\\u0442\\u0430_\\u0441_\\u0441\\u0440\\u043e\\u043a\\u0430\\u043c\\u0438.xlsx\", \"Excel spreadsheet\", \"Project tasks\", \"Timelines\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Чеклист_проекта_с_сроками.xlsx  что здесь указано?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768516799,
+    "update_time": 1768516799,
+    "_id": "hybrid:keywords:cf7f4e5a7e5335303a2beab4430fbc44"
+  },
+  "hybrid:keywords:daa0c38812cb8a474a7397250f56a521": {
+    "return": "{\"high_level_keywords\": [\"Economics spreadsheet\", \"Table content description\", \"Data interpretation\"], \"low_level_keywords\": [\"\\u044d\\u043a\\u043e\\u043d\\u043e\\u043c\\u0438\\u043a\\u0430.xlsx\", \"Excel file\", \"Table\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "экономика.xlsx  о чем это таблица?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768517091,
+    "update_time": 1768517091,
+    "_id": "hybrid:keywords:daa0c38812cb8a474a7397250f56a521"
+  },
+  "hybrid:keywords:886ee5f7b054b37982581ebfcd85428b": {
+    "return": "{\"high_level_keywords\": [\"Document content interpretation\", \"Excel file review\", \"Understanding written content\"], \"low_level_keywords\": [\"\\u0417\\u0435\\u0440\\u0434\\u0435\", \"\\u04e9\\u0442\\u0456\\u043d\\u0456\\u043c \\u04af\\u043b\\u0433\\u0456\\u0441\\u0456\", \"\\u041d\\u0443\\u0440\\u0433\\u0443\\u043b\\u044c\", \"Excel file\", \"XLSX document\", \"file name\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Зерде (өтінім үлгісі) Нургуль.xlsx  что здесь написано ?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768565196,
+    "update_time": 1768565196,
+    "_id": "hybrid:keywords:886ee5f7b054b37982581ebfcd85428b"
+  },
+  "hybrid:keywords:3f5007f18f7723a52133ebd82b065af1": {
+    "return": "{\"high_level_keywords\": [\"Excel spreadsheet analysis\", \"Economic calculation\", \"Understanding calculations\"], \"low_level_keywords\": [\"\\u044d\\u043a\\u043e\\u043d\\u043e\\u043c\\u0438\\u043a\\u0430.xlsx\", \"Excel (.xlsx) file\", \"Calculation method\", \"Spreadsheet formula\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "экономика.xlsx  какой здесь расчет делается?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768565313,
+    "update_time": 1768565313,
+    "_id": "hybrid:keywords:3f5007f18f7723a52133ebd82b065af1"
+  },
+  "hybrid:keywords:c8dd6e8fd50a30bc343e506d8f9d6425": {
+    "return": "{\"high_level_keywords\": [\"MVP project\", \"Technology stack\", \"Technical specification\"], \"low_level_keywords\": [\"\\u0442\\u0435\\u0445\\u043d\\u0438\\u0447\\u0435\\u0441\\u043a\\u043e\\u0435_\\u0437\\u0430\\u0434\\u0430\\u043d\\u0438\\u0435_MVP.docx\", \"MVP\", \"Software stack\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "техническое_задание_MVP.docx  стэки этого проекта какие?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768565581,
+    "update_time": 1768565581,
+    "_id": "hybrid:keywords:c8dd6e8fd50a30bc343e506d8f9d6425"
   }
 }
