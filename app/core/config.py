@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     AZURE_OCR_ENABLED: bool = False
     AZURE_OCR_ENDPOINT: str | None = None
     AZURE_OCR_API_KEY: str | None = None
+    AZURE_OCR_REQUEST_FORMAT: str = "multipart"
+    AZURE_OCR_MODEL: str = "mistral-document-ai-2505"
+    AZURE_OCR_INCLUDE_IMAGE_BASE64: bool = False
     AZURE_OCR_MIN_TEXT_CHARS: int = 200
     AZURE_OCR_TIMEOUT_S: int = 120
 

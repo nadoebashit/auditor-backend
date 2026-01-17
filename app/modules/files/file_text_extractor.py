@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import logging
 import re
@@ -143,26 +144,48 @@ def extract_text_from_pdf(file_bytes: bytes, filename: str | None = None) -> str
         if endpoint and api_key:
             try:
                 timeout_s = int(getattr(settings, "AZURE_OCR_TIMEOUT_S", 120) or 120)
-                headers = {"api-key": str(api_key)}
-                files = {
-                    "file": (
-                        (filename or "document.pdf"),
-                        file_bytes,
-                        "application/pdf",
-                    )
-                }
-                resp = requests.post(
-                    str(endpoint),
-                    headers=headers,
-                    files=files,
-                    timeout=timeout_s,
-                    verify=(
-                        str(getattr(settings, "REQUESTS_CA_BUNDLE", "") or "").strip()
-                        if bool(getattr(settings, "REQUESTS_VERIFY_SSL", True))
-                        and str(getattr(settings, "REQUESTS_CA_BUNDLE", "") or "").strip()
-                        else bool(getattr(settings, "REQUESTS_VERIFY_SSL", True))
-                    ),
+                verify_opt = (
+                    str(getattr(settings, "REQUESTS_CA_BUNDLE", "") or "").strip()
+                    if bool(getattr(settings, "REQUESTS_VERIFY_SSL", True))
+                    and str(getattr(settings, "REQUESTS_CA_BUNDLE", "") or "").strip()
+                    else bool(getattr(settings, "REQUESTS_VERIFY_SSL", True))
                 )
+
+                request_format = str(getattr(settings, "AZURE_OCR_REQUEST_FORMAT", "multipart") or "multipart").strip().lower()
+                if request_format in {"mistral", "mistral_json", "json"}:
+                    model = str(getattr(settings, "AZURE_OCR_MODEL", "mistral-document-ai-2505") or "mistral-document-ai-2505")
+                    include_image_base64 = bool(getattr(settings, "AZURE_OCR_INCLUDE_IMAGE_BASE64", False))
+                    b64 = base64.b64encode(file_bytes).decode("ascii")
+                    data_uri = f"data:application/pdf;base64,{b64}"
+                    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                    payload = {
+                        "model": model,
+                        "document": {"type": "document_url", "document_url": data_uri},
+                        "include_image_base64": include_image_base64,
+                    }
+                    resp = requests.post(
+                        str(endpoint),
+                        headers=headers,
+                        json=payload,
+                        timeout=timeout_s,
+                        verify=verify_opt,
+                    )
+                else:
+                    headers = {"api-key": str(api_key)}
+                    files = {
+                        "file": (
+                            (filename or "document.pdf"),
+                            file_bytes,
+                            "application/pdf",
+                        )
+                    }
+                    resp = requests.post(
+                        str(endpoint),
+                        headers=headers,
+                        files=files,
+                        timeout=timeout_s,
+                        verify=verify_opt,
+                    )
                 resp.raise_for_status()
 
                 data = resp.json()
@@ -172,6 +195,8 @@ def extract_text_from_pdf(file_bytes: bytes, filename: str | None = None) -> str
                         ocr_text = data.get("text") or ""
                     elif isinstance(data.get("content"), str):
                         ocr_text = data.get("content") or ""
+                    elif isinstance(data.get("output"), str):
+                        ocr_text = data.get("output") or ""
                     elif isinstance(data.get("pages"), list):
                         parts: list[str] = []
                         for p in data.get("pages") or []:

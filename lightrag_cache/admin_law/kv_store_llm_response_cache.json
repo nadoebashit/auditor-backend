@@ -598,5 +598,125 @@
     "create_time": 1768565581,
     "update_time": 1768565581,
     "_id": "hybrid:keywords:c8dd6e8fd50a30bc343e506d8f9d6425"
+  },
+  "hybrid:keywords:13c55c1ddccb313e72d5576e3827d756": {
+    "return": "{\"high_level_keywords\": [\"Recommendation letter\", \"Document meaning\", \"Content understanding\"], \"low_level_keywords\": [\"PDF file\", \"Recommendation letter content\", \"Purpose of the letter\", \"Written text explanation\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "11.Рекомендательное письмо.pdf   что здесь написано смысл письма какой?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768663515,
+    "update_time": 1768663515,
+    "_id": "hybrid:keywords:13c55c1ddccb313e72d5576e3827d756"
+  },
+  "hybrid:keywords:4daf07a3562d2113ca3930dbc6dd5753": {
+    "return": "{\"high_level_keywords\": [\"Document explanation\", \"File content inquiry\", \"Request for explanation\"], \"low_level_keywords\": [\"DOCX file\", \"Microsoft Word document\", \"document filename\", \"version number (2)\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "сиськоәнәң (2).docx  здесь че указано? обясни",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768664003,
+    "update_time": 1768664003,
+    "_id": "hybrid:keywords:4daf07a3562d2113ca3930dbc6dd5753"
+  },
+  "hybrid:keywords:e967628fc1774bd0d46ae4880db5dd77": {
+    "return": "{\"high_level_keywords\": [\"Document summary request\", \"File content explanation\"], \"low_level_keywords\": [\"\\u0441\\u0438\\u0441\\u044c\\u043a\\u043e\\u04d9\\u043d\\u04d9\\u04a3 (2).docx\", \"DOCX file\", \"Brief explanation\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "сиськоәнәң (2).docx  кратко обяснии про что файл",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768664481,
+    "update_time": 1768664481,
+    "_id": "hybrid:keywords:e967628fc1774bd0d46ae4880db5dd77"
+  },
+  "hybrid:keywords:c5061017f406e6e5efc58f2684a2f2f9": {
+    "return": "{\"high_level_keywords\": [\"Contract document\", \"Document summary\", \"Medical services agreement\"], \"low_level_keywords\": [\"Medical Astana\", \"Contract\", \"DOCX file\", \"Astana\", \"Medical organization\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Договор Medical Астана.docx  очем этот документ?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768664543,
+    "update_time": 1768664543,
+    "_id": "hybrid:keywords:c5061017f406e6e5efc58f2684a2f2f9"
+  },
+  "hybrid:keywords:48de42924c59985502e912d6c0b11cc3": {
+    "return": "{\"high_level_keywords\": [\"Document identification\", \"PDF document\", \"Document type inquiry\"], \"low_level_keywords\": [\"040603500840-20250704184724906.pdf\", \"PDF file\", \"Russian language query\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "040603500840-20250704184724906.pdf  это че задокумент",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768664800,
+    "update_time": 1768664800,
+    "_id": "hybrid:keywords:48de42924c59985502e912d6c0b11cc3"
+  },
+  "hybrid:keywords:9a5565cef0850199ede0bca561279302": {
+    "return": "{\"high_level_keywords\": [\"Excel file contents inquiry\", \"Project timeline estimation\", \"Document review\"], \"low_level_keywords\": [\"\\u041f\\u0440\\u043e\\u0435\\u043a\\u0442_\\u043e\\u0446\\u0435\\u043d\\u043a\\u0430_\\u0441\\u0440\\u043e\\u043a\\u043e\\u0432.xlsx\", \".xlsx file\", \"Project deadlines\", \"Timeline estimation\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Проект_оценка_сроков.xlsx  здесь что написано",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768666338,
+    "update_time": 1768666338,
+    "_id": "hybrid:keywords:9a5565cef0850199ede0bca561279302"
   }
 }
