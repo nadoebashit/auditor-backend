@@ -26,6 +26,7 @@ from app.modules.files.chunking import (
     chunk_text_simple,
     chunk_f1_company_profile,
     chunk_f2_industry_pack,
+    chunk_excel_text,
     Chunk,
     ChunkMetadata,
     extract_isa_references,
@@ -289,7 +290,24 @@ class HybridFileService:
                 if m:
                     kb_file_id_for_chunking = m.group("kb_id")
 
-            if kb_file_id_for_chunking in {"D2", "D3", "D4"}:
+            # Определяем, является ли файл Excel (по content_type или расширению)
+            content_type_lower = (stored_file.content_type or "").lower()
+            filename_lower = file_name_for_kb.lower()
+            is_excel = (
+                "spreadsheet" in content_type_lower
+                or "excel" in content_type_lower
+                or filename_lower.endswith(".xlsx")
+                or filename_lower.endswith(".xls")
+            )
+
+            if is_excel:
+                # Специализированный chunking для Excel-таблиц
+                section_chunks = chunk_excel_text(
+                    text,
+                    chunk_size=settings.CHUNK_SIZE,
+                    rows_per_chunk=50,
+                )
+            elif kb_file_id_for_chunking in {"D2", "D3", "D4"}:
                 section_chunks = chunk_by_node_marker(text)
             elif kb_file_id_for_chunking == "F1":
                 section_chunks = chunk_f1_company_profile(text)
@@ -303,6 +321,22 @@ class HybridFileService:
                     overlap=100,
                     min_chunk_size=50,
                 )
+
+            if not section_chunks:
+                logger.warning(
+                    "No chunks produced during chunking",
+                    extra={
+                        "file_id": str(file_id),
+                        "file_name": stored_file.original_filename,
+                        "content_type": stored_file.content_type,
+                    },
+                )
+                stored_file.is_indexed = False
+                stored_file.index_error = "No chunks produced during chunking"
+                stored_file.index_status = FileIndexStatus.ERROR
+                self.db.commit()
+                metrics["status"] = "error"
+                return metrics
             
             # Извлекаем ISA ссылки из всего документа
             doc_isa_refs = extract_isa_references(text)

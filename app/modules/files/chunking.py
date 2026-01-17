@@ -584,6 +584,127 @@ def extract_ifrs_references(text: str) -> List[str]:
     return list(out)
 
 
+def chunk_excel_text(
+    content: str,
+    chunk_size: Optional[int] = None,
+    rows_per_chunk: int = 50,
+) -> List[Chunk]:
+    """
+    Специализированный chunking для текста, извлечённого из Excel.
+    
+    Распознаёт формат:
+    - SHEET: <название листа>
+    - строки с табуляцией (данные таблицы)
+    
+    Разбивает по листам и группам строк, сохраняя заголовки таблиц.
+    """
+    if not content or not content.strip():
+        return []
+    
+    if chunk_size is None:
+        chunk_size = settings.CHUNK_SIZE
+    
+    chunks: List[Chunk] = []
+    chunk_index = 0
+    
+    # Разбиваем по листам
+    sheet_pattern = re.compile(r'^SHEET:\s*(.+)$', re.MULTILINE)
+    sheet_matches = list(sheet_pattern.finditer(content))
+    
+    if not sheet_matches:
+        # Нет маркеров листов — используем размерный chunking
+        return _chunk_by_size(content, chunk_size, overlap=50, min_chunk_size=30)
+    
+    for i, match in enumerate(sheet_matches):
+        sheet_name = match.group(1).strip()
+        start_pos = match.end()
+        end_pos = sheet_matches[i + 1].start() if i + 1 < len(sheet_matches) else len(content)
+        
+        sheet_content = content[start_pos:end_pos].strip()
+        if not sheet_content:
+            # Still create a minimal chunk so the file can be indexed and surfaced in retrieval.
+            chunk_text = f"SHEET: {sheet_name}"
+            chunks.append(
+                Chunk(
+                    text=chunk_text,
+                    metadata=ChunkMetadata(
+                        chunk_index=chunk_index,
+                        section_title=sheet_name,
+                        section_level=1,
+                        char_start=match.start(),
+                        char_end=end_pos,
+                    ),
+                )
+            )
+            chunk_index += 1
+            continue
+        
+        lines = sheet_content.split('\n')
+        
+        # Первая непустая строка — заголовок таблицы
+        header_line = None
+        data_lines = []
+        for line in lines:
+            if line.strip():
+                if header_line is None:
+                    header_line = line
+                else:
+                    data_lines.append(line)
+        
+        if not data_lines:
+            # Только заголовок или пусто
+            if header_line:
+                chunk_text = f"SHEET: {sheet_name}\n{header_line}"
+                chunks.append(Chunk(
+                    text=chunk_text,
+                    metadata=ChunkMetadata(
+                        chunk_index=chunk_index,
+                        section_title=sheet_name,
+                        section_level=1,
+                        char_start=match.start(),
+                        char_end=end_pos,
+                    )
+                ))
+                chunk_index += 1
+            continue
+        
+        # Разбиваем данные на группы по rows_per_chunk
+        for batch_start in range(0, len(data_lines), rows_per_chunk):
+            batch_end = min(batch_start + rows_per_chunk, len(data_lines))
+            batch_lines = data_lines[batch_start:batch_end]
+            
+            # Каждый чанк включает заголовок для контекста
+            chunk_text = f"SHEET: {sheet_name}\n"
+            if header_line:
+                chunk_text += f"{header_line}\n"
+            chunk_text += '\n'.join(batch_lines)
+            
+            # Проверяем размер
+            if len(chunk_text) > chunk_size:
+                # Слишком большой — разбиваем дополнительно
+                sub_chunks = _chunk_by_size(chunk_text, chunk_size, overlap=50, min_chunk_size=30)
+                for sub in sub_chunks:
+                    sub.metadata.chunk_index = chunk_index
+                    sub.metadata.section_title = sheet_name
+                    chunks.append(sub)
+                    chunk_index += 1
+            else:
+                chunks.append(Chunk(
+                    text=chunk_text,
+                    metadata=ChunkMetadata(
+                        chunk_index=chunk_index,
+                        section_title=sheet_name,
+                        section_level=1,
+                        char_start=match.start(),
+                        char_end=end_pos,
+                    )
+                ))
+                chunk_index += 1
+    
+    logger.info(f"Excel chunking: {len(chunks)} chunks from {len(sheet_matches)} sheets")
+    return chunks
+
+
 def detect_audit_cycle(text: str) -> Optional[str]:
     """
     Определяет цикл аудита из текста.
