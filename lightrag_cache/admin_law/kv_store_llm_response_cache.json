@@ -718,5 +718,105 @@
     "create_time": 1768666338,
     "update_time": 1768666338,
     "_id": "hybrid:keywords:9a5565cef0850199ede0bca561279302"
+  },
+  "hybrid:keywords:558635e51848ce668979cc59257ac3fd": {
+    "return": "{\"high_level_keywords\": [\"Document identification\", \"File type inquiry\", \"Document classification\"], \"low_level_keywords\": [\"1SMZ64_ORAZBEK_ABINUR.pdf\", \"PDF file\", \"Document filename\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "1SMZ64_ORAZBEK_ABINUR.pdf   что за документ это?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768688895,
+    "update_time": 1768688895,
+    "_id": "hybrid:keywords:558635e51848ce668979cc59257ac3fd"
+  },
+  "hybrid:keywords:ecfb08551a21112802f1667119245620": {
+    "return": "{\"high_level_keywords\": [\"Document identification\", \"File type clarification\", \"PDF document\"], \"low_level_keywords\": [\"1SMZ64_ORAZBEK_ABINUR.pdf\", \"ORAZBEK ABINUR\", \"1SMZ64\", \"PDF\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "ты путаешь что за документ это ? 1SMZ64_ORAZBEK_ABINUR.pdf",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768688983,
+    "update_time": 1768688983,
+    "_id": "hybrid:keywords:ecfb08551a21112802f1667119245620"
+  },
+  "hybrid:keywords:59fd8228f20aa2921527aa50a236b05a": {
+    "return": "{\"high_level_keywords\": [\"Document identification\", \"File type inquiry\", \"Application template\"], \"low_level_keywords\": [\"Excel spreadsheet (.xlsx)\", \"\\u0417\\u0435\\u0440\\u0434\\u0435\", \"\\u041d\\u0443\\u0440\\u0433\\u0443\\u043b\\u044c\", \"application template\", \"filename\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "а это что за документ? Зерде (өтінім үлгісі) Нургуль.xlsx",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768689065,
+    "update_time": 1768689065,
+    "_id": "hybrid:keywords:59fd8228f20aa2921527aa50a236b05a"
+  },
+  "hybrid:keywords:c747ebea8dd9034af6fa6a2856b5293d": {
+    "return": "{\"high_level_keywords\": [\"Document identification\", \"File type inquiry\", \"Receipt document\"], \"low_level_keywords\": [\"transfer-receipt-\\u211613_758457093070199616.pdf\", \"Transfer receipt\", \"PDF file\", \"Receipt number 13_758457093070199616\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "transfer-receipt-№13_758457093070199616.pdf это че за документ",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768689162,
+    "update_time": 1768689162,
+    "_id": "hybrid:keywords:c747ebea8dd9034af6fa6a2856b5293d"
+  },
+  "hybrid:keywords:f12902444593a4ab97c965cf0e12bfaa": {
+    "return": "{\"high_level_keywords\": [\"Document identification\", \"Technical implementation\", \"Software documentation\"], \"low_level_keywords\": [\"Technical implementation without Agent Assist\", \"Agent Assist\", \"DOCX file\", \"Document title\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Техническая_реализация_без_Agent_Assist.docx  что за документ это ?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768691459,
+    "update_time": 1768691459,
+    "_id": "hybrid:keywords:f12902444593a4ab97c965cf0e12bfaa"
   }
 }

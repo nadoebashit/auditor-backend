@@ -271,15 +271,34 @@ class EnhancedRAGPipeline:
 
         # 3.5 LightRAG (Hybrid Graph+Vector) query expansion for admin_law
         # This is used to expand the vector-retrieval candidate pool BEFORE reranking.
-        admin_lightrag_hints = await self._lightrag_admin_hints(
-            question=question,
-            plan=query_plan,
-            policy_result=policy_result,
-            include_admin_laws=include_admin_laws,
+        lightrag_time = 0.0
+        admin_lightrag_hints = None
+        lightrag_enabled = (
+            query_plan.intent != IntentClass.SMALLTALK
+            and include_admin_laws
+            and query_plan.admin_law_budget > 0
         )
+        if lightrag_enabled:
+            t_lightrag = time.time()
+            admin_lightrag_hints = await self._lightrag_admin_hints(
+                question=question,
+                plan=query_plan,
+                policy_result=policy_result,
+                include_admin_laws=include_admin_laws,
+            )
+            lightrag_time = time.time() - t_lightrag
         lightrag_expanded_queries = self._build_lightrag_query_expansions(
             question=question,
             lightrag_hints=admin_lightrag_hints,
+        )
+
+        logger.info(
+            "RAG_PIPELINE: LightRAG hints prepared",
+            extra={
+                "enabled": bool(lightrag_enabled),
+                "lightrag_time_ms": int(lightrag_time * 1000),
+                "intent": query_plan.intent.value,
+            },
         )
 
         # Keep prompt-compatible structure (so UI/logs are consistent)
@@ -421,11 +440,18 @@ class EnhancedRAGPipeline:
         )
         
         # 10. Grounding Check
-        grounded_response = await self._grounding_check(
-            question=question,
-            response=raw_response,
-            evidence_pack=evidence_pack,
-        )
+        grounding_time = 0.0
+        grounding_enabled = query_plan.required_evidence == "must_cite"
+        if grounding_enabled:
+            t_grounding = time.time()
+            grounded_response = await self._grounding_check(
+                question=question,
+                response=raw_response,
+                evidence_pack=evidence_pack,
+            )
+            grounding_time = time.time() - t_grounding
+        else:
+            grounded_response = {"score": 0.7}
 
         grounded_response_text = self._sanitize_answer_text(raw_response.get("text") or "")
         
@@ -462,11 +488,14 @@ class EnhancedRAGPipeline:
                 "evidence_count": len(evidence_pack["evidence"]),
                 "total_tokens": len(final_prompt),
                 "total_time_ms": int(total_time * 1000),
+                "lightrag_time_ms": int(lightrag_time * 1000),
                 "retrieval_time_ms": int(retrieval_time * 1000),
                 "rerank_time_ms": int(rerank_time * 1000),
                 "generation_time_ms": int(generation_time * 1000),
+                "grounding_time_ms": int(grounding_time * 1000),
                 "processing_time": datetime.utcnow().isoformat(),
                 "lightrag_second_signal": bool(lightrag_hints),
+                "grounding_check_enabled": bool(grounding_enabled),
                 "max_output_tokens": max_output_tokens,
                 "answer_len_chars": len(grounded_response_text or ""),
             }
