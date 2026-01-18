@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     # OpenAI API (fallback)
     OPENAI_API_KEY: str | None = None
 
+    # Feature Flags
+    USE_LLM_QUERY_PLANNER: bool = False
+
     # RAG Settings
     RAG_MAX_CONTEXT_TOKENS: int = 12000
     RAG_DEFAULT_TOP_K: int = 10

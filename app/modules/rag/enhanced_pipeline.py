@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
+from app.modules.rag.types import IntentClass, QueryPlan
 from app.modules.rag.gemini import GeminiAPI
 from app.modules.rag.policy_gate import PolicyGate, PolicyDecision
 from app.modules.rag.sparse_search import HybridSearch, create_hybrid_search
@@ -64,47 +65,8 @@ _GLOBAL_LIGHTRAG_CACHE: Dict[str, Any] = {}
 _GLOBAL_LIGHTRAG_CACHE_LOCK = threading.Lock()
 
 
-class IntentClass(Enum):
-    """Intent classes for query routing."""
-    CONTRACT_SIGNATORIES = "contract_signatories"
-    CONTRACT_STRUCTURE = "contract_structure"
-    DOC_QA = "doc_qa"
-    COMPANY_FAQ = "company_faq"
-    INDUSTRY_GUIDANCE = "industry_guidance"
-    PLANNING_MATERIALITY = "planning_materiality"
-    SAMPLING = "sampling"
-    RISK_ASSESSMENT = "risk_assessment"
-    CYCLE_DEEP_DIVE = "cycle_deep_dive"
-    LEGAL_SUBSEQUENT_EVENTS = "legal_subsequent_events"
-    ACCEPTANCE_CONTINUANCE = "acceptance_continuance"
-    OPINION_FORMING = "opinion_forming"
-    GOING_CONCERN = "going_concern"
-    KAM = "kam"
-    TCWG_COMMUNICATIONS = "tcwg_communications"
-    PBC_WAVES = "pbc_waves"
-    FORENSIC_RED_FLAGS = "forensic_red_flags"
-    TRANSLATION_TERMINOLOGY = "translation_terminology"
-    DISCLOSURE_DRAFTING = "disclosure_drafting"
-    MODEL_OPS_FORMATTING = "model_ops_formatting"
-    SMALLTALK = "smalltalk"
-
-
 class _ExtraIntent(Enum):
     BANKS_IN_DOCS = "banks_in_docs"
-
-
-@dataclass
-class QueryPlan:
-    """Query execution plan with budgets and requirements."""
-    intent: IntentClass
-    required_evidence: str  # "must_cite" / "helpful" / "optional"
-    admin_law_budget: int
-    customer_doc_budget: int
-    chat_memory_budget: int
-    total_context_limit: int
-    temperature: float
-    exact_patterns: List[str]
-    governing_standards: List[str]
 
 
 @dataclass
@@ -248,9 +210,13 @@ class EnhancedRAGPipeline:
                 "chat_memories_count": len(conversation_state.get("chat_memories", [])),
             },
         )
-        
+
         # 3. Query Router/Planner
-        query_plan = self._route_and_plan(question, conversation_state)
+        if settings.USE_LLM_QUERY_PLANNER:
+            from app.modules.rag.llm_query_planner import llm_query_plan
+            query_plan = await llm_query_plan(question, conversation_state, self.gemini_api)
+        else:
+            query_plan = self._route_and_plan(question, conversation_state)
 
         tool_outputs = self._maybe_compute_block_c_tools(
             question=question,
