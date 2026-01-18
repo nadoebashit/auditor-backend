@@ -818,5 +818,225 @@
     "create_time": 1768691459,
     "update_time": 1768691459,
     "_id": "hybrid:keywords:f12902444593a4ab97c965cf0e12bfaa"
+  },
+  "local:keywords:8a99775d2d50b08c7f7c9c1ab059058c": {
+    "return": "{\"high_level_keywords\": [\"Office lease agreement\", \"Contract signatories\", \"Document analysis\"], \"low_level_keywords\": [\"03-\\u0414\\u043e\\u0433\\u043e\\u0432\\u043e\\u0440-\\u0430\\u0440\\u0435\\u043d\\u0434\\u044b-\\u043e\\u0444\\u0438\\u0441\\u0430.txt\", \"lease agreement\", \"signatures\", \"signed contract\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "по файлу 03-Договор-аренды-офиса.txt \"Кто подписал договор аренды офиса?\"",
+    "queryparam": {
+      "mode": "local",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 6,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768738710,
+    "update_time": 1768738710,
+    "_id": "local:keywords:8a99775d2d50b08c7f7c9c1ab059058c"
+  },
+  "hybrid:keywords:583580dcac4ec0541faceaee165cce47": {
+    "return": "{\"high_level_keywords\": [\"Materiality calculation\", \"Financial statements analysis\", \"Audit materiality\"], \"low_level_keywords\": [\"LLP Aster Digital\", \"2025 financial statements\", \"01-Financial-Statements-LLP-Aster-2025.txt\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "\"Рассчитай существенность для ТОО Астер Диджитал\"  01-Финансовая-отчетность-ТОО-Астер-2025.txt по этому документу",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768738948,
+    "update_time": 1768738948,
+    "_id": "hybrid:keywords:583580dcac4ec0541faceaee165cce47"
+  },
+  "hybrid:keywords:5818ce18ac9fd72cbc063b2afb928d07": {
+    "return": "{\"high_level_keywords\": [\"Legal opinion\", \"Company claims\", \"Litigation risk assessment\", \"Unfavorable case outcome probability\", \"Litigation reserves\"], \"low_level_keywords\": [\"Claims against the company\", \"Tech Solutions\", \"Court proceedings\", \"Legal dispute\", \"Reserve for legal proceedings\", \"05-\\u042e\\u0440\\u0438\\u0434\\u0438\\u0447\\u0435\\u0441\\u043a\\u043e\\u0435-\\u0437\\u0430\\u043a\\u043b\\u044e\\u0447\\u0435\\u043d\\u0438\\u0435-\\u043f\\u043e-\\u043f\\u0440\\u0435\\u0442\\u0435\\u043d\\u0437\\u0438\\u044f\\u043c.txt\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "05-Юридическое-заключение-по-претензиям.txt \"Есть ли претензии к компании?\"\n2. \"Какова вероятность неблагоприятного исхода по делу с Tech Solutions?\"\n3. \"Какой резерв нужно создать под судебные разбирательства?\"",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768739859,
+    "update_time": 1768739859,
+    "_id": "hybrid:keywords:5818ce18ac9fd72cbc063b2afb928d07"
+  },
+  "hybrid:keywords:da57acdaf53d5d7c5205fa2273e51942": {
+    "return": "{\"high_level_keywords\": [\"Legal claims\", \"Company liabilities\", \"Legal analysis\", \"Document-based assessment\"], \"low_level_keywords\": [\"Claims against the company\", \"Legal opinion document\", \"Claims review\", \"Legal conclusions\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "1. \"Есть ли претензии к компании?\"  по этому документу 05-Юридическое-заключение-по-претензиям.txt",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768748520,
+    "update_time": 1768748520,
+    "_id": "hybrid:keywords:da57acdaf53d5d7c5205fa2273e51942"
+  },
+  "local:keywords:e0ccfb5f7108253418acf70c07960d3c": {
+    "return": "{\"high_level_keywords\": [\"Office lease agreement\", \"Contract signatory identification\", \"Lease contract parties\"], \"low_level_keywords\": [\"Office lease contract\", \"Contract signer\", \"Office rental\", \"03-\\u0414\\u043e\\u0433\\u043e\\u0432\\u043e\\u0440-\\u0430\\u0440\\u0435\\u043d\\u0434\\u044b-\\u043e\\u0444\\u0438\\u0441\\u0430.txt\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "03-Договор-аренды-офиса.txt  \"Кто подписал договор аренды офиса?\"",
+    "queryparam": {
+      "mode": "local",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 6,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768749146,
+    "update_time": 1768749146,
+    "_id": "local:keywords:e0ccfb5f7108253418acf70c07960d3c"
+  },
+  "hybrid:keywords:1e41f232ed8a092c3061d1ef424dcf63": {
+    "return": "{\"high_level_keywords\": [\"Accounting materiality\", \"Financial reporting\", \"Materiality calculation\"], \"low_level_keywords\": [\"\\u0422\\u041e\\u041e \\u0410\\u0441\\u0442\\u0435\\u0440 \\u0414\\u0438\\u0434\\u0436\\u0438\\u0442\\u0430\\u043b\", \"Financial statements\", \"2025\", \"01-\\u0424\\u0438\\u043d\\u0430\\u043d\\u0441\\u043e\\u0432\\u0430\\u044f-\\u043e\\u0442\\u0447\\u0435\\u0442\\u043d\\u043e\\u0441\\u0442\\u044c-\\u0422\\u041e\\u041e-\\u0410\\u0441\\u0442\\u0435\\u0440-2025.txt\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "\"Рассчитай существенность для ТОО Астер Диджитал\"  01-Финансовая-отчетность-ТОО-Астер-2025.txt",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768749284,
+    "update_time": 1768749284,
+    "_id": "hybrid:keywords:1e41f232ed8a092c3061d1ef424dcf63"
+  },
+  "hybrid:keywords:6b87e668ac951cb2bc27cd740b2523ed": {
+    "return": "{\"high_level_keywords\": [\"Materiality calculation\", \"Audit materiality\", \"Accounting assessment\"], \"low_level_keywords\": [\"\\u0422\\u041e\\u041e \\u0410\\u0441\\u0442\\u0435\\u0440 \\u0414\\u0438\\u0434\\u0436\\u0438\\u0442\\u0430\\u043b\", \"Materiality threshold\", \"Financial materiality\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Рассчитай существенность для ТОО Астер Диджитал\"",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 5,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": false
+    },
+    "create_time": 1768749622,
+    "update_time": 1768749622,
+    "_id": "hybrid:keywords:6b87e668ac951cb2bc27cd740b2523ed"
+  },
+  "hybrid:keywords:242bdedc5d6ac93652233b45b9d02068": {
+    "return": "{\"high_level_keywords\": [\"Document description\", \"Financial settlements\", \"Purpose of document\"], \"low_level_keywords\": [\"\\u0420\\u0430\\u0441\\u0447\\u0435\\u0442\\u044b \\u0428\\u044b\\u043c\\u043a\\u0435\\u043d\\u0442 01.01.2025 \\u0441 \\u043f\\u0430\\u0440\\u0442\\u043d\\u0435\\u0440\\u0430\\u043c\\u0438.xlsx\", \"\\u0428\\u044b\\u043c\\u043a\\u0435\\u043d\\u0442\", \"Financial settlements with partners\", \"January 1, 2025\", \"Excel spreadsheet (.xlsx)\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "Расчеты Шымкент 01.01.2025 с партнерами.xlsx о чем этот документ?",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 8,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": true
+    },
+    "create_time": 1768771442,
+    "update_time": 1768771442,
+    "_id": "hybrid:keywords:242bdedc5d6ac93652233b45b9d02068"
+  },
+  "hybrid:keywords:729666eed92cd68f8c373987aaa572ad": {
+    "return": "{\"high_level_keywords\": [\"Request for clarification\", \"Information visibility\", \"Understanding received data\"], \"low_level_keywords\": [\"Received information\", \"Input content\", \"What was received\", \"What was not received\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "можешь показать что тебе конкретно попало а то я не могу понять что тебе попало а что нет всю информация",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 8,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": true
+    },
+    "create_time": 1768771766,
+    "update_time": 1768771766,
+    "_id": "hybrid:keywords:729666eed92cd68f8c373987aaa572ad"
+  },
+  "hybrid:keywords:6aaf20924ae4b1d4a862c2238d8b3661": {
+    "return": "{\"high_level_keywords\": [\"One-time investments\", \"Total investment amount\", \"Investment summary\"], \"low_level_keywords\": [\"Initial investment\", \"Upfront costs\", \"Capital expenditure\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "скажи мне итоговые разовые инвестиции",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 8,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": true
+    },
+    "create_time": 1768776069,
+    "update_time": 1768776069,
+    "_id": "hybrid:keywords:6aaf20924ae4b1d4a862c2238d8b3661"
+  },
+  "hybrid:keywords:5f99bef8aae208e00b856b3c0f5a0bd3": {
+    "return": "{\"high_level_keywords\": [\"Profit forecast\", \"Installation plan\", \"Business planning\"], \"low_level_keywords\": [\"Installation\", \"Planned profit\", \"Plan for 2029\", \"Year 2029\"]}",
+    "cache_type": "keywords",
+    "chunk_id": null,
+    "original_prompt": "какая прибыль от монтажа по плану на 2029 год",
+    "queryparam": {
+      "mode": "hybrid",
+      "response_type": "Multiple Paragraphs",
+      "top_k": 8,
+      "chunk_top_k": 20,
+      "max_entity_tokens": 6000,
+      "max_relation_tokens": 8000,
+      "max_total_tokens": 30000,
+      "user_prompt": "",
+      "enable_rerank": true
+    },
+    "create_time": 1768776710,
+    "update_time": 1768776710,
+    "_id": "hybrid:keywords:5f99bef8aae208e00b856b3c0f5a0bd3"
   }
 }

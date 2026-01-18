@@ -1061,6 +1061,32 @@ class EnhancedRAGPipeline:
         patterns = []
         standards = []
 
+        # File-specific questions: route to DOC_QA so we actually retrieve evidence.
+        # Typical: "<filename>.xlsx о чем этот файл?"
+        m_file = re.search(r"([^\s\\/]+\.(?:xlsx|xls|docx|pdf))\b", question_lower, flags=re.IGNORECASE)
+        if m_file and any(
+            w in question_lower
+            for w in [
+                "о чем",
+                "про что",
+                "смысл",
+                "что за",
+                "что в",
+                "содержит",
+                "содержание",
+                "опиши",
+                "описание",
+            ]
+        ):
+            intent = IntentClass.DOC_QA
+            required_evidence = "must_cite"
+            # Prefer customer docs for explicit filenames, but keep small admin budget as fallback.
+            admin_budget = max(admin_budget, 1)
+            customer_budget = max(customer_budget, 10)
+            chat_budget = 2
+            total_limit = 12000
+            temp = 0.2
+
         if intent == IntentClass.SMALLTALK and any(
             w in question_lower
             for w in [
@@ -1382,6 +1408,24 @@ class EnhancedRAGPipeline:
                 industry_code = "INSURANCE"
 
         query_vector = self._create_query_embedding(question)
+
+        target_filename: str | None = None
+        try:
+            m_fn = re.search(r"([^\s\\/]+\.(?:xlsx|xls|docx|pdf))\b", question or "", flags=re.IGNORECASE)
+            if m_fn:
+                target_filename = (m_fn.group(1) or "").strip().strip('"\'`')
+        except Exception:
+            target_filename = None
+
+        def _filename_matches(name: str | None) -> bool:
+            if not target_filename:
+                return True
+            if not name:
+                return False
+            try:
+                return str(name).strip().lower() == str(target_filename).strip().lower()
+            except Exception:
+                return False
         
         # 1. ADMIN_LAW retrieval from G1 namespace (oson_knowledge)
         if plan.admin_law_budget > 0 and FileScope.ADMIN_LAW.value in policy_result.allowed_scopes:
@@ -1512,6 +1556,14 @@ class EnhancedRAGPipeline:
                     owner_id=None,
                 )
 
+                if target_filename:
+                    must_list = list((customer_filter.must if customer_filter and customer_filter.must else []))
+                    should_list = [
+                        FieldCondition(key="stored_file_original_filename", match=MatchValue(value=target_filename)),
+                        FieldCondition(key="filename", match=MatchValue(value=target_filename)),
+                    ]
+                    customer_filter = Filter(must=must_list, should=should_list)
+
                 ql = (question or "").lower()
                 boost_sparse = any(
                     k in ql
@@ -1596,6 +1648,8 @@ class EnhancedRAGPipeline:
                                 hydrated_text, hydrated_filename = self._hydrate_chunk(r.file_id, r.chunk_index)
                                 final_text = (hydrated_text or "").strip() or (r.text or "")
                                 final_filename = hydrated_filename or r.filename
+                                if not _filename_matches(final_filename):
+                                    continue
                                 results["customer_docs"].append({
                                     "source": "fts_customer",
                                     "score": float(min_similarity) + (0.001 * max(0, (retrieval_top_k - i))),
@@ -1630,6 +1684,8 @@ class EnhancedRAGPipeline:
                     for point in customer_points:
                         payload = point.payload or {}
                         chunk_text_value, filename = self._hydrate_chunk_from_payload(payload)
+                        if not _filename_matches(filename):
+                            continue
                         results["customer_docs"].append({
                             "source": "qdrant_customer",
                             "score": point.score,

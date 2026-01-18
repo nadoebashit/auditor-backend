@@ -606,6 +606,43 @@ def chunk_excel_text(
     
     chunks: List[Chunk] = []
     chunk_index = 0
+
+    def _clean_excel_row(line: str) -> str:
+        if not line:
+            return ""
+        parts = [p.strip() for p in line.split("\t")]
+        cleaned: list[str] = []
+        for p in parts:
+            if p in {"#REF!", "#DIV/0!", "#N/A", "#VALUE!", "#NAME?", "#NULL!", "#NUM!"}:
+                cleaned.append("EXCEL_ERROR")
+            else:
+                cleaned.append(p)
+
+        while cleaned and (cleaned[-1] == "" or cleaned[-1] in {"0", "0.0"}):
+            cleaned.pop()
+
+        return "\t".join(cleaned).strip()
+
+    def _has_nonzero_data(line: str) -> bool:
+        if not line:
+            return False
+        parts = [p.strip() for p in line.split("\t") if p is not None]
+        for p in parts:
+            if not p:
+                continue
+            if p in {"0", "0.0"}:
+                continue
+            return True
+        return False
+
+    def _is_numeric(token: str) -> bool:
+        if not token:
+            return False
+        try:
+            float(token.replace(" ", ""))
+            return True
+        except Exception:
+            return False
     
     # Разбиваем по листам
     sheet_pattern = re.compile(r'^SHEET:\s*(.+)$', re.MULTILINE)
@@ -645,11 +682,17 @@ def chunk_excel_text(
         header_line = None
         data_lines = []
         for line in lines:
-            if line.strip():
-                if header_line is None:
-                    header_line = line
+            cleaned = _clean_excel_row(line)
+            if not _has_nonzero_data(cleaned):
+                continue
+            if header_line is None:
+                first_cell = (cleaned.split("\t")[0].strip() if cleaned else "")
+                if first_cell and (not _is_numeric(first_cell)):
+                    header_line = cleaned
                 else:
-                    data_lines.append(line)
+                    data_lines.append(cleaned)
+            else:
+                data_lines.append(cleaned)
         
         if not data_lines:
             # Только заголовок или пусто
